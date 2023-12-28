@@ -1,0 +1,10 @@
+{
+	"id": "diffzip",
+	"name": "Differential ZIP Backup",
+	"version": "0.0.1",
+	"minAppVersion": "0.15.0",
+	"description": "Back our vault up with the least storage.",
+	"author": "vorotamoroz",
+	"authorUrl": "https://github.com/vrtmrz",
+	"isDesktopOnly": false
+}
