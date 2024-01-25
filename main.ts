@@ -13,10 +13,12 @@ import * as fflate from "fflate";
 
 interface DZBSettings {
 	backupFolder: string;
+	maxSize: number;
 }
 const InfoFile = `backupinfo.md`;
 const DEFAULT_SETTINGS: DZBSettings = {
 	backupFolder: "backup",
+	maxSize: 30,
 };
 
 type FileInfo = {
@@ -40,6 +42,7 @@ async function computeDigest(data: Uint8Array) {
 		.join("");
 	return hashHex;
 }
+
 export default class DiffZipBackupPlugin extends Plugin {
 	settings: DZBSettings;
 	messages = {} as Record<string, NoticeWithTimer>;
@@ -112,9 +115,8 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const secondsInDay =
 			~~(today.getTime() / 1000 - today.getTimezoneOffset() * 60) % 86400;
 
-		const newFileName = `${today.getFullYear()}-${
-			today.getMonth() + 1
-		}-${today.getDate()}-${secondsInDay}.zip`;
+		const newFileName = `${today.getFullYear()}-${today.getMonth() + 1
+			}-${today.getDate()}-${secondsInDay}.zip`;
 		const output = [] as Uint8Array[];
 		const zip = new fflate.Zip(async (err, dat, final) => {
 			if (err) {
@@ -131,17 +133,26 @@ export default class DiffZipBackupPlugin extends Plugin {
 						return;
 					}
 					const outZipBlob = new Blob(output);
-					const outZipFile = normalizePath(
-						this.settings.backupFolder + "/" + newFileName
-					);
-					this.app.vault.createBinary(
-						outZipFile,
-						await outZipBlob.arrayBuffer()
-					);
-					this.logMessage(
-						`${outZipFile} has been created!`,
-						"proc-zip-archive"
-					);
+					let i = 0;
+					const buf = await outZipBlob.arrayBuffer();
+					const step = (this.settings.maxSize / 1) == 0 ? buf.byteLength + 1 : ((this.settings.maxSize / 1)) * 1024 * 1024;
+					let pieceCount = 0;
+					if (buf.byteLength > step) pieceCount = 1;
+					while (i < buf.byteLength) {
+						const outZipFile = normalizePath(
+							this.settings.backupFolder + "/" + newFileName + (pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3))))
+						);
+						pieceCount++;
+						this.app.vault.createBinary(
+							outZipFile,
+							buf.slice(i, i + step)
+						);
+						i += step;
+						this.logMessage(
+							`${outZipFile} has been created!`,
+							"proc-zip-archive"
+						);
+					}
 					const tocFilePath = normalizePath(
 						`${this.settings.backupFolder}/${InfoFile}`
 					);
@@ -228,7 +239,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
 
-	onunload() {}
+	onunload() { }
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -265,6 +276,19 @@ class SampleSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.backupFolder)
 					.onChange(async (value) => {
 						this.plugin.settings.backupFolder = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Source Size Cap")
+			.setDesc("(MB) Total size to stop zipping")
+			.addText((text) =>
+				text
+					.setPlaceholder("30")
+					.setValue(this.plugin.settings.maxSize + "")
+					.onChange(async (value) => {
+						this.plugin.settings.maxSize = Number.parseInt(value);
 						await this.plugin.saveSettings();
 					})
 			);
