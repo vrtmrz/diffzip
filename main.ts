@@ -287,7 +287,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 			}
 		});
 		const normalFiles = allFiles.filter(
-			(e) => !e.startsWith(this.settings.backupFolder + "/") && !e.startsWith(this.settings.restoreFolder + "/")
+			(e) => !e.startsWith(this.settings.backupFolder + "/") && !e.startsWith(this.settings.restoreFolder + "/") && !e.startsWith(".trash/")
 		);
 		let processed = 0;
 		let zipped = 0;
