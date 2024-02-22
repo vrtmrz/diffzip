@@ -12,15 +12,17 @@ import {
 } from "obsidian";
 import * as fflate from "fflate";
 
-interface DZBSettings {
+const InfoFile = `backupinfo.md`;
+
+interface DiffZipBackupSettings {
 	backupFolder: string;
 	restoreFolder: string;
 	maxSize: number;
 	startBackupAtLaunch: boolean;
 	includeHiddenFolder: boolean;
 }
-const InfoFile = `backupinfo.md`;
-const DEFAULT_SETTINGS: DZBSettings = {
+
+const DEFAULT_SETTINGS: DiffZipBackupSettings = {
 	startBackupAtLaunch: false,
 	backupFolder: "backup",
 	restoreFolder: "restored",
@@ -50,53 +52,11 @@ async function computeDigest(data: Uint8Array) {
 	return hashHex;
 }
 
-
-async function ensureDirectory(app: App, fullpath: string) {
-	const pathElements = fullpath.split("/");
-	pathElements.pop();
-	let c = "";
-	for (const v of pathElements) {
-		c += v;
-		try {
-			await app.vault.createFolder(c);
-		} catch (ex) {
-			// basically skip exceptions.
-			if (ex.message && ex.message == "Folder already exists.") {
-				// especialy this message is.
-			} else {
-				new Notice("Folder Create Error");
-				console.log(ex);
-			}
-		}
-		c += "/";
-	}
-}
-
-async function getFiles(
-	app: App,
-	path: string,
-	ignoreList: string[]
-) {
-	const w = await app.vault.adapter.list(path);
-	let files = [
-		...w.files
-			.filter((e) => !ignoreList.some((ee) => e.endsWith(ee)))
-	];
-	L1: for (const v of w.folders) {
-		for (const ignore of ignoreList) {
-			if (v.endsWith(ignore)) {
-				continue L1;
-			}
-		}
-		// files = files.concat([v]);
-		files = files.concat(await getFiles(app, v, ignoreList));
-	}
-	return files;
-}
-
 export default class DiffZipBackupPlugin extends Plugin {
-	settings: DZBSettings;
+	settings: DiffZipBackupSettings;
 	messages = {} as Record<string, NoticeWithTimer>;
+
+	// #region Log
 	logMessage(message: string, key?: string) {
 		this.logWrite(message, key);
 		if (!key) {
@@ -126,6 +86,50 @@ export default class DiffZipBackupPlugin extends Plugin {
 	logWrite(message: string, key?: string) {
 		const dt = new Date().toLocaleString();
 		console.log(`${dt}\t${message}`);
+	}
+
+	// #endregion log
+
+	async ensureDirectory(fullPath: string) {
+		const pathElements = fullPath.split("/");
+		pathElements.pop();
+		let c = "";
+		for (const v of pathElements) {
+			c += v;
+			try {
+				await this.app.vault.createFolder(c);
+			} catch (ex) {
+				// basically skip exceptions.
+				if (ex.message && ex.message == "Folder already exists.") {
+					// especial this message is.
+				} else {
+					new Notice("Folder Create Error");
+					console.log(ex);
+				}
+			}
+			c += "/";
+		}
+	}
+
+	async getFiles(
+		path: string,
+		ignoreList: string[]
+	) {
+		const w = await app.vault.adapter.list(path);
+		let files = [
+			...w.files
+				.filter((e) => !ignoreList.some((ee) => e.endsWith(ee)))
+		];
+		L1: for (const v of w.folders) {
+			for (const ignore of ignoreList) {
+				if (v.endsWith(ignore)) {
+					continue L1;
+				}
+			}
+			// files = files.concat([v]);
+			files = files.concat(await this.getFiles(v, ignoreList));
+		}
+		return files;
 	}
 
 	async loadTOC() {
@@ -163,6 +167,15 @@ export default class DiffZipBackupPlugin extends Plugin {
 		}
 		return toc;
 	}
+
+	async getAllFiles() {
+		const ignores = ["node_modules", ".git", this.app.vault.configDir + "/trash", this.app.vault.configDir + "/workspace.json", this.app.vault.configDir + "/workspace-mobile.json"];
+		if (this.settings.includeHiddenFolder) {
+			return (await this.getFiles("", ignores)).filter(e => !e.startsWith(".trash/"))
+		}
+		return this.app.vault.getFiles().map(e => e.path);
+	}
+
 	async readFile(filename: string) {
 		if (this.settings.includeHiddenFolder) {
 			return await this.app.vault.adapter.readBinary(filename);
@@ -186,7 +199,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return null;
 	}
 	async writeFileBinary(filename: string, content: ArrayBuffer) {
-		await ensureDirectory(this.app, filename);
+		await this.ensureDirectory(filename);
 		await this.app.vault.adapter.writeBinary(filename, content);
 		return true;
 	}
@@ -208,7 +221,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 				} catch (ex) {
 					//NO OP.
 				}
-				await ensureDirectory(this.app, filename);
+				await this.ensureDirectory(filename);
 				await this.app.vault.createBinary(filename, content)
 				return true;
 
@@ -221,9 +234,8 @@ export default class DiffZipBackupPlugin extends Plugin {
 
 	async createZip(verbosity: boolean) {
 		const log = verbosity ? (msg: string, key?: string) => this.logWrite(msg, key) : (msg: string, key?: string) => this.logMessage(msg, key);
-		const ignoreDirs = ["node_modules", ".git", this.app.vault.configDir + "/trash", this.app.vault.configDir + "/workspace.json", this.app.vault.configDir + "/workspace-mobile.json"];
-		const allFiles = this.settings.includeHiddenFolder ? await getFiles(this.app, "", ignoreDirs) : this.app.vault.getFiles().map(e => e.path);
-		// const allFiles = [...this.app.vault.getFiles()];
+
+		const allFiles = await this.getAllFiles();
 		const toc = await this.loadTOC();
 		const today = new Date();
 		const secondsInDay =
@@ -235,9 +247,11 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const zip = new fflate.Zip(async (err, dat, final) => {
 			if (err) {
 				console.dir(err);
+				this.logMessage("Something occurred while archiving the backup, please check the result once");
+				return;
 			}
 			if (!err) {
-				this.logWrite("Updating..");
+				this.logWrite("Updating ZIP..");
 				output.push(dat);
 				if (final) {
 					if (zipped == 0) {
@@ -246,9 +260,13 @@ export default class DiffZipBackupPlugin extends Plugin {
 						);
 						return;
 					}
+					// Generate all concatenated Blob
 					const outZipBlob = new Blob(output);
 					let i = 0;
 					const buf = await outZipBlob.arrayBuffer();
+
+					// Writing a large file can cause the crash of Obsidian, and very heavy to synchronise.
+					// Hence, we have to split the file into a smaller size.
 					const step = (this.settings.maxSize / 1) == 0 ? buf.byteLength + 1 : ((this.settings.maxSize / 1)) * 1024 * 1024;
 					let pieceCount = 0;
 					if (buf.byteLength > step) pieceCount = 1;
@@ -257,7 +275,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 							this.settings.backupFolder + "/" + newFileName + (pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3))))
 						);
 						pieceCount++;
-						await ensureDirectory(this.app, outZipFile);
+						await this.ensureDirectory(outZipFile);
 						this.app.vault.createBinary(
 							outZipFile,
 							buf.slice(i, i + step)
@@ -268,6 +286,8 @@ export default class DiffZipBackupPlugin extends Plugin {
 							"proc-zip-process"
 						);
 					}
+
+					// Update TOC
 					const tocFilePath = normalizePath(
 						`${this.settings.backupFolder}/${InfoFile}`
 					);
@@ -287,7 +307,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 			}
 		});
 		const normalFiles = allFiles.filter(
-			(e) => !e.startsWith(this.settings.backupFolder + "/") && !e.startsWith(this.settings.restoreFolder + "/") && !e.startsWith(".trash/")
+			(e) => !e.startsWith(this.settings.backupFolder + "/") && !e.startsWith(this.settings.restoreFolder + "/")
 		);
 		let processed = 0;
 		let zipped = 0;
@@ -297,7 +317,6 @@ export default class DiffZipBackupPlugin extends Plugin {
 				`Backup processing ${processed}/${normalFiles.length}  ${verbosity ? `\n${path}` : ""}`,
 				"proc-zip-process"
 			);
-			// const path = file;
 			const content = await this.readFile(path);
 			if (!content) {
 				this.logMessage(
@@ -305,6 +324,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 				);
 				continue;
 			}
+			// Check the file actually modified.
 			const f = new Uint8Array(content);
 			const digest = await computeDigest(f);
 			processed++;
@@ -354,6 +374,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		fflateFile.push(t.encode("```\n" + stringifyYaml(toc) + "\n```"), true);
 		zip.end();
 	}
+
 	async extract(zipFile: string, extractFile: string, restoreAs: string) {
 		const zipPath = normalizePath(`${this.settings.backupFolder}/${zipFile}`);
 		const zipF = this.app.vault.getAbstractFileByPath(zipPath);
@@ -378,9 +399,10 @@ export default class DiffZipBackupPlugin extends Plugin {
 		}
 		const unzipper = new fflate.Unzip();
 		unzipper.register(fflate.UnzipInflate);
+
+		// When the target file has been extracted, extracted will be true.
 		let extracted = false;
 		unzipper.onfile = file => {
-			// file.name is a string, file is a stream
 			if (file.name == extractFile) {
 				this.logMessage(
 					`${file.name} Found`,
@@ -398,7 +420,6 @@ export default class DiffZipBackupPlugin extends Plugin {
 							`${file.name} has been overwritten!`,
 							"proc-zip-export"
 						);
-
 					} else {
 						this.logMessage(
 							`Creating or Overwriting ${file.name} has been failed!`,
@@ -411,14 +432,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 					`${file.name} Reading...`,
 					"proc-zip-export"
 				);
-
 				file.start();
-
-			} else {
-				// this.logMessage(
-				// 	`${file.name} Skipped`,
-				// 	"proc-zip-export-skip"
-				// );
 			}
 		};
 		let idx = 0;
@@ -432,6 +446,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 			const step = 1024 * 1024; // Possibly fails
 			let i = 0;
 			while (i < buf.byteLength) {
+				// If already extract has completed, stop parsing subsequent chunks
 				const isCompleted = extracted || (i + step > buf.byteLength && idx == files.length);
 				unzipper.push(buf.slice(i, i + step), isCompleted);
 				if (extracted) break;
@@ -443,8 +458,46 @@ export default class DiffZipBackupPlugin extends Plugin {
 			`All ZIP files has been read.`,
 			"proc-zip-export-processing"
 		);
-		// unzipper.push(new Uint8Array(), true);
 	}
+
+	async selectAndRestore() {
+		const files = await this.loadTOC();
+		const filenames = Object.entries(files).sort((a, b) => b[1].mtime - a[1].mtime).map(e => e[0]);
+		if (filenames.length == 0) {
+			return;
+		}
+		const selected = await askSelectString(this.app, "Select file", filenames);
+		if (!selected) {
+			return;
+		}
+		const revisions = files[selected].history;
+		const d = `\u{2063}`;
+		const revisionList = revisions.map(e => `${e.zipName}${d} (${e.modified})`).reverse();
+		const selectedTimestamp = await askSelectString(this.app, "Select file", revisionList);
+		if (!selectedTimestamp) {
+			return;
+		}
+		const [filename,] = selectedTimestamp.split(d);
+		const suffix = filename.replace(".zip", "");
+		// No cares about without extension
+		const extArr = selected.split(".");
+		const ext = extArr.pop();
+		const selectedWithoutExt = extArr.join(".");
+		const RESTORE_OVERWRITE = "Original place and okay to overwrite";
+		const RESTORE_TO_RESTORE_FOLDER = "Under the restore folder";
+		const RESTORE_WITH_SUFFIX = "Original place but with ZIP name suffix";
+		const restoreMethods = [RESTORE_TO_RESTORE_FOLDER, RESTORE_OVERWRITE, RESTORE_WITH_SUFFIX]
+		const howToRestore = await askSelectString(this.app, "Where to restore?", restoreMethods);
+		const restoreAs = howToRestore == RESTORE_OVERWRITE ? selected : (
+			howToRestore == RESTORE_TO_RESTORE_FOLDER ? normalizePath(`${this.settings.restoreFolder}/${selected}`) :
+				((howToRestore == RESTORE_WITH_SUFFIX) ? `${selectedWithoutExt}-${suffix}.${ext}` : "")
+		)
+		if (!restoreAs) {
+			return;
+		}
+		await this.extract(filename, selected, restoreAs);
+	}
+
 	async onLayoutReady() {
 		if (this.settings.startBackupAtLaunch) {
 			this.createZip(false);
@@ -464,46 +517,11 @@ export default class DiffZipBackupPlugin extends Plugin {
 			id: "find-from-backups",
 			name: "Restore from backups",
 			callback: async () => {
-				const files = await this.loadTOC();
-				const filenames = Object.entries(files).sort((a, b) => b[1].mtime - a[1].mtime).map(e => e[0]);
-				const selected = await askSelectString(this.app, "Select file", filenames);
-				if (!selected) {
-					return;
-				}
-				const revisions = files[selected].history;
-				const d = `\u{2063}`;
-				const revisionList = revisions.map(e => `${e.zipName}${d} (${e.modified})`).reverse();
-				const selectedTimestamp = await askSelectString(this.app, "Select file", revisionList);
-				if (!selectedTimestamp) {
-					return;
-				}
-				const [filename,] = selectedTimestamp.split(d);
-				const suffix = filename.replace(".zip", "");
-				// No cares about without extension
-				const extArr = selected.split(".");
-				const ext = extArr.pop();
-				const selectedWithoutExt = extArr.join(".");
-				const RESTORE_OVERWRITE = "Original place and okay to overwrite";
-				const RESTORE_TO_RESTOREFOLDER = "Under the restore folder";
-				const RESTORE_WITH_SUFFIX = "Original place but with ZIP name suffix";
-				const restoreMethods = [RESTORE_TO_RESTOREFOLDER, RESTORE_OVERWRITE, RESTORE_WITH_SUFFIX]
-				const howToRestore = await askSelectString(this.app, "Where to restore?", restoreMethods);
-				const restoreAs = howToRestore == RESTORE_OVERWRITE ? selected : (
-					howToRestore == RESTORE_TO_RESTOREFOLDER ? normalizePath(`${this.settings.restoreFolder}/${selected}`) :
-						((howToRestore == RESTORE_WITH_SUFFIX) ? `${selectedWithoutExt}-${suffix}.${ext}` : "")
-				)
-				if (!restoreAs) {
-					return;
-				}
-
-				await this.extract(filename, selected, restoreAs);
-
+				await this.selectAndRestore();
 			},
 		})
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new DiffZipSettingTab(this.app, this));
 	}
-
-	onunload() { }
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -518,7 +536,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 	}
 }
 
-class SampleSettingTab extends PluginSettingTab {
+class DiffZipSettingTab extends PluginSettingTab {
 	plugin: DiffZipBackupPlugin;
 
 	constructor(app: App, plugin: DiffZipBackupPlugin) {
@@ -532,7 +550,6 @@ class SampleSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		new Setting(containerEl)
 			.setName("Start backup at launch")
-			// .setDesc("")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.startBackupAtLaunch)
@@ -593,7 +610,7 @@ class SampleSettingTab extends PluginSettingTab {
 }
 
 
-export class PopoverSelectString extends FuzzySuggestModal<string> {
+class PopOverSelectString extends FuzzySuggestModal<string> {
 	app: App;
 	callback?: (e: string) => void = () => { };
 	getItemsFun: () => string[] = () => {
@@ -631,10 +648,10 @@ export class PopoverSelectString extends FuzzySuggestModal<string> {
 	}
 }
 
-export const askSelectString = (app: App, message: string, items: string[]): Promise<string> => {
+const askSelectString = (app: App, message: string, items: string[]): Promise<string> => {
 	const getItemsFun = () => items;
 	return new Promise((res) => {
-		const popover = new PopoverSelectString(app, message, "", getItemsFun, (result) => res(result));
-		popover.open();
+		const popOver = new PopOverSelectString(app, message, "", getItemsFun, (result) => res(result));
+		popOver.open();
 	});
 };
