@@ -1,5 +1,7 @@
 # Differential ZIP Backup
 
+![screenshot](https://github.com/vrtmrz/diffzip/assets/45774780/19ac3972-70e1-462b-b26f-28e7c0f69655)
+
 This is a vault backup plugin for [Obsidian](https://obsidian.md).
 
 We can store all the files which have been modified, into a ZIP file.
