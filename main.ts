@@ -115,7 +115,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		path: string,
 		ignoreList: string[]
 	) {
-		const w = await app.vault.adapter.list(path);
+		const w = await this.app.vault.adapter.list(path);
 		let files = [
 			...w.files
 				.filter((e) => !ignoreList.some((ee) => e.endsWith(ee)))
