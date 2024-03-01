@@ -3,7 +3,7 @@
 	"name": "Differential ZIP Backup",
 	"version": "0.0.6",
 	"minAppVersion": "0.15.0",
-	"description": "Back our vault up with the least storage.",
+	"description": "Back our vault up with lesser storage.",
 	"author": "vorotamoroz",
 	"authorUrl": "https://github.com/vrtmrz",
 	"isDesktopOnly": false
