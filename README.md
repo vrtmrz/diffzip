@@ -26,13 +26,15 @@ We can store all the files which have been modified, into a ZIP file.
 
 ## Settings
 
-| Key                    | Description                                                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Start backup at launch | When the plug-in has been loaded, Differential backup will be created automatically.                                                                               |
-| Backup folder          | The folder which backups are stored.                                                                                                                               |
-| Restore folder         | The folder which restored files will be stored.                                                                                                                    |
-| Include hidden folder  | Backup also the configurations, plugins, themes, and, snippets.                                                                                                    |
-| ZIP splitting size     | An large file are not good for handling, so this plug-in splits the backup ZIP into this size. This splitted ZIP files can be handled by 7Z or something archiver. |
+| Key                     | Description                                                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Start backup at launch  | When the plug-in has been loaded, Differential backup will be created automatically.                                                                               |
+| Use Desktop Mode        | When enabled, We can use internal API and store backups anywhere you want. This feature is on the bleeding edge. Not safe. Only available on desktop devices.      |
+| Backup folder           | The folder which backups are stored. We can choose only the folder inside the vault.                                                                               |
+| Backup folder (desktop) | The folder which backups are stored (if enabling `Use Desktop Mode`). We can choose any folder (Absolute path recommended).                                        |
+| Restore folder          | The folder which restored files will be stored.                                                                                                                    |
+| Include hidden folder   | Backup also the configurations, plugins, themes, and, snippets.                                                                                                    |
+| ZIP splitting size      | An large file are not good for handling, so this plug-in splits the backup ZIP into this size. This splitted ZIP files can be handled by 7Z or something archiver. |
 
 
 ## What is `backupinfo.md`?

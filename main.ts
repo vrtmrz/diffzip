@@ -1,3 +1,4 @@
+import type { PlatformPath } from "node:path";
 import {
 	App,
 	FuzzySuggestModal,
@@ -15,19 +16,23 @@ import * as fflate from "fflate";
 const InfoFile = `backupinfo.md`;
 
 interface DiffZipBackupSettings {
-	backupFolder: string;
+	backupFolderMobile: string;
 	restoreFolder: string;
 	maxSize: number;
 	startBackupAtLaunch: boolean;
 	includeHiddenFolder: boolean;
+	desktopFolderEnabled: boolean;
+	BackupFolderDesktop: string;
 }
 
 const DEFAULT_SETTINGS: DiffZipBackupSettings = {
 	startBackupAtLaunch: false,
-	backupFolder: "backup",
+	backupFolderMobile: "backup",
+	BackupFolderDesktop: "c:\\temp\\backup",
 	restoreFolder: "restored",
 	includeHiddenFolder: false,
 	maxSize: 30,
+	desktopFolderEnabled: false
 };
 
 type FileInfo = {
@@ -54,6 +59,24 @@ async function computeDigest(data: Uint8Array) {
 
 export default class DiffZipBackupPlugin extends Plugin {
 	settings: DiffZipBackupSettings;
+
+	get isMobile(): boolean {
+		// @ts-ignore
+		return this.app.isMobile;
+	}
+	get isDesktopMode(): boolean {
+		return this.settings.desktopFolderEnabled && !this.isMobile;
+	}
+
+	get backupFolder(): string {
+		return this.isDesktopMode ? this.settings.BackupFolderDesktop : this.settings.backupFolderMobile;
+	}
+
+	get sep(): string {
+		//@ts-ignore
+		return this.isDesktopMode ? this.app.vault.adapter.path.sep : "/";
+	}
+
 	messages = {} as Record<string, NoticeWithTimer>;
 
 	// #region Log
@@ -91,7 +114,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 	// #endregion log
 
 	async ensureDirectory(fullPath: string) {
-		const pathElements = fullPath.split("/");
+		const pathElements = fullPath.split(this.sep);
 		pathElements.pop();
 		let c = "";
 		for (const v of pathElements) {
@@ -107,10 +130,24 @@ export default class DiffZipBackupPlugin extends Plugin {
 					console.log(ex);
 				}
 			}
-			c += "/";
+			c += this.sep;
 		}
 	}
+	async ensureDirectoryDesktop(fullPath: string) {
 
+		//@ts-ignore
+		const delimiter = await this.app.vault.adapter.path.sep as string;
+		const pathElements = fullPath.split(delimiter);
+		pathElements.pop();
+		const mkPath = pathElements.join(delimiter);
+		//@ts-ignore
+		await this.app.vault.adapter.fsPromises.mkdir(mkPath, { recursive: true });
+	}
+
+	async writeBinaryDesktop(fullPath: string, data: ArrayBuffer) {
+		//@ts-ignore
+		await this.app.vault.adapter.fsPromises.writeFile(fullPath, Buffer.from(data));
+	}
 	async getFiles(
 		path: string,
 		ignoreList: string[]
@@ -132,15 +169,32 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return files;
 	}
 
+	async normalizePath(path: string) {
+		if (this.settings.desktopFolderEnabled && !this.isMobile) {
+			//@ts-ignore
+			const f = this.app.vault.adapter.path as PlatformPath;
+			return f.normalize(path);
+		} else {
+			return normalizePath(path);
+		}
+	}
 	async loadTOC() {
 		let toc = {} as FileInfos;
-		const indexFile = this.app.vault.getAbstractFileByPath(
-			normalizePath(`${this.settings.backupFolder}/${InfoFile}`)
-		);
-		if (indexFile && indexFile instanceof TFile) {
+		const tocFilePath = await this.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
+		const tocExist = await this.isExists(tocFilePath);
+
+		if (tocExist) {
 			this.logWrite(`Loading Backup information`, "proc-index");
 			try {
-				const tocStr = await this.app.vault.read(indexFile);
+				const tocBin = await this.readBinaryAuto(tocFilePath);
+				if (tocBin == null) {
+					this.logMessage(
+						`LOAD ERROR: Could not read Backup information`,
+						"proc-index"
+					);
+					return {}
+				}
+				const tocStr = new TextDecoder().decode(tocBin);
 				toc = parseYaml(tocStr.replace(/^```$/gm, ""));
 				if (toc == null) {
 					this.logMessage(
@@ -232,6 +286,21 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return false;
 	}
 
+	async writeBinaryAuto(filename: string, content: ArrayBuffer) {
+		if (this.isDesktopMode) {
+			await this.ensureDirectoryDesktop(filename);
+			await this.writeBinaryDesktop(filename, content);
+		} else {
+			await this.ensureDirectory(filename);
+			const theFile = this.app.vault.getAbstractFileByPath(filename);
+			if (theFile == null) {
+				await this.app.vault.createBinary(filename, content)
+			} else {
+				await this.app.vault.modifyBinary(theFile as TFile, content)
+			}
+		}
+	}
+
 	async createZip(verbosity: boolean) {
 		const log = verbosity ? (msg: string, key?: string) => this.logWrite(msg, key) : (msg: string, key?: string) => this.logMessage(msg, key);
 
@@ -271,43 +340,26 @@ export default class DiffZipBackupPlugin extends Plugin {
 					let pieceCount = 0;
 					if (buf.byteLength > step) pieceCount = 1;
 					while (i < buf.byteLength) {
-						const outZipFile = normalizePath(
-							this.settings.backupFolder + "/" + newFileName + (pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3))))
-						);
+						const outZipFile = await this.normalizePath(`${this.backupFolder}${this.sep}${newFileName}${pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3)))}`)
 						pieceCount++;
-						await this.ensureDirectory(outZipFile);
-						this.app.vault.createBinary(
-							outZipFile,
-							buf.slice(i, i + step)
-						);
+						this.writeBinaryAuto(outZipFile, buf.slice(i, i + step));
 						i += step;
 						this.logMessage(
 							`${outZipFile} has been created!`,
 							"proc-zip-process"
 						);
 					}
-
-					// Update TOC
-					const tocFilePath = normalizePath(
-						`${this.settings.backupFolder}/${InfoFile}`
+					const tocFilePath = await this.normalizePath(
+						`${this.backupFolder}${this.sep}${InfoFile}`
 					);
-					let tocFile =
-						this.app.vault.getAbstractFileByPath(tocFilePath);
-					if (!tocFile || !(tocFile instanceof TFile)) {
-						tocFile = await this.app.vault.create(tocFilePath, "");
-					}
-					if (tocFile instanceof TFile) {
-						await this.app.vault.modify(
-							tocFile,
-							`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`
-						);
-					}
+					// Update TOC
+					await this.writeBinaryAuto(tocFilePath, new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`));
 					log(`Backup information has been updated`);
 				}
 			}
 		});
 		const normalFiles = allFiles.filter(
-			(e) => !e.startsWith(this.settings.backupFolder + "/") && !e.startsWith(this.settings.restoreFolder + "/")
+			(e) => !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
 		);
 		let processed = 0;
 		let zipped = 0;
@@ -375,20 +427,47 @@ export default class DiffZipBackupPlugin extends Plugin {
 		zip.end();
 	}
 
+	async isExists(path: string) {
+		if (this.isDesktopMode) {
+			try {
+				//@ts-ignore
+				const _ = await this.app.vault.adapter.fsPromises.stat(path);
+				return true;
+			} catch (ex) {
+				// NO OP.
+			}
+			return false;
+		} else {
+			return this.app.vault.getAbstractFileByPath(path) != null;
+		}
+	}
+	async readBinaryAuto(path: string): Promise<ArrayBuffer | null> {
+		if (this.isDesktopMode) {
+			//@ts-ignore
+			return (await this.app.vault.adapter.fsPromises.readFile(path)).buffer;
+		} else {
+			const f = this.app.vault.getAbstractFileByPath(path);
+			if (f instanceof TFile) {
+				return await this.app.vault.readBinary(f);
+			}
+		}
+		return null;
+	}
+
 	async extract(zipFile: string, extractFile: string, restoreAs: string) {
-		const zipPath = normalizePath(`${this.settings.backupFolder}/${zipFile}`);
-		const zipF = this.app.vault.getAbstractFileByPath(zipPath);
-		let files = [];
-		if (zipF instanceof TFile) {
-			files = [zipF]
+		const zipPath = await this.normalizePath(`${this.backupFolder}${this.sep}${zipFile}`);
+		const zipF = await this.isExists(zipPath);
+		let files = [] as string[];
+		if (zipF) {
+			files = [zipPath]
 		} else {
 			let hasNext = true;
 			let counter = 0;
 			do {
 				counter++;
-				const zipF = this.app.vault.getAbstractFileByPath(zipPath + "." + `00${counter}`.slice(-3));
-				if (zipF instanceof TFile) {
-					files.push(zipF);
+				const partialZipPath = zipPath + "." + `00${counter}`.slice(-3)
+				if (await this.isExists(partialZipPath)) {
+					files.push(partialZipPath);
 				} else {
 					hasNext = false;
 				}
@@ -439,10 +518,18 @@ export default class DiffZipBackupPlugin extends Plugin {
 		for (const f of files) {
 			idx++;
 			this.logMessage(
-				`Processing ${f.name}...`,
+				`Processing ${f}...`,
 				"proc-zip-export-processing"
 			);
-			const buf = new Uint8Array(await this.app.vault.readBinary(f));
+			const binary = await this.readBinaryAuto(f);
+			if (binary == null) {
+				this.logMessage(
+					`Could not read ${f}`,
+					"proc-zip-export-processing"
+				);
+				return;
+			}
+			const buf = new Uint8Array(binary);
 			const step = 1024 * 1024; // Possibly fails
 			let i = 0;
 			while (i < buf.byteLength) {
@@ -489,7 +576,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const restoreMethods = [RESTORE_TO_RESTORE_FOLDER, RESTORE_OVERWRITE, RESTORE_WITH_SUFFIX]
 		const howToRestore = await askSelectString(this.app, "Where to restore?", restoreMethods);
 		const restoreAs = howToRestore == RESTORE_OVERWRITE ? selected : (
-			howToRestore == RESTORE_TO_RESTORE_FOLDER ? normalizePath(`${this.settings.restoreFolder}/${selected}`) :
+			howToRestore == RESTORE_TO_RESTORE_FOLDER ? await this.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`) :
 				((howToRestore == RESTORE_WITH_SUFFIX) ? `${selectedWithoutExt}-${suffix}.${ext}` : "")
 		)
 		if (!restoreAs) {
@@ -505,6 +592,10 @@ export default class DiffZipBackupPlugin extends Plugin {
 	}
 	async onload() {
 		await this.loadSettings();
+		if ("backupFolder" in this.settings) {
+			this.settings.backupFolderMobile = this.settings.backupFolder as string;
+			delete this.settings.backupFolder;
+		}
 		this.app.workspace.onLayoutReady(() => this.onLayoutReady())
 		this.addCommand({
 			id: "create-diff-zip",
@@ -558,18 +649,52 @@ class DiffZipSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-		new Setting(containerEl)
-			.setName("Backup folder")
-			.setDesc("Folder to keep each backup ZIPs and information file")
-			.addText((text) =>
-				text
-					.setPlaceholder("backup")
-					.setValue(this.plugin.settings.backupFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.backupFolder = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		if (!this.plugin.isMobile) {
+			new Setting(containerEl)
+				.setName("Use desktop Mode (Bleeding Edge)")
+				.setDesc("We can use external folder of Obsidian only if on desktop and it is enabled. This feature uses Internal API.")
+				.setDisabled(this.plugin.isMobile)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.desktopFolderEnabled)
+						.onChange(async (value) => {
+							this.plugin.settings.desktopFolderEnabled = value;
+							await this.plugin.saveSettings();
+							this.display();
+						})
+				);
+		}
+		if (!this.plugin.isDesktopMode) {
+			new Setting(containerEl)
+				.setName("Backup folder")
+				.setDesc("Folder to keep each backup ZIPs and information file")
+				.addText((text) =>
+					text
+						.setPlaceholder("backup")
+						.setValue(this.plugin.settings.backupFolderMobile)
+						.onChange(async (value) => {
+							this.plugin.settings.backupFolderMobile = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+		}
+		if (this.plugin.isDesktopMode) {
+			new Setting(containerEl)
+				.setName("Backup folder (desktop)")
+				.setDesc("Folder to keep each backup ZIPs and information file")
+				.addText((text) =>
+					text
+						.setPlaceholder("c:\\temp\\backup")
+						.setValue(this.plugin.settings.BackupFolderDesktop)
+						.setDisabled(!this.plugin.settings.desktopFolderEnabled)
+						.onChange(async (value) => {
+							this.plugin.settings.BackupFolderDesktop = value;
+							await this.plugin.saveSettings();
+						})
+				)
+		}
+
 		new Setting(containerEl)
 			.setName("Restore folder")
 			.setDesc("Folder to save the restored file")
