@@ -16,6 +16,7 @@ import * as fflate from "fflate";
 const InfoFile = `backupinfo.md`;
 
 interface DiffZipBackupSettings {
+	backupFolder?: string;
 	backupFolderMobile: string;
 	restoreFolder: string;
 	maxSize: number;
