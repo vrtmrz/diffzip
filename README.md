@@ -26,15 +26,62 @@ We can store all the files which have been modified, into a ZIP file.
 
 ## Settings
 
-| Key                     | Description                                                                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Start backup at launch  | When the plug-in has been loaded, Differential backup will be created automatically.                                                                               |
-| Use Desktop Mode        | When enabled, We can use internal API and store backups anywhere you want. This feature is on the bleeding edge. Not safe. Only available on desktop devices.      |
-| Backup folder           | The folder which backups are stored. We can choose only the folder inside the vault.                                                                               |
-| Backup folder (desktop) | The folder which backups are stored (if enabling `Use Desktop Mode`). We can choose any folder (Absolute path recommended).                                        |
-| Restore folder          | The folder which restored files will be stored.                                                                                                                    |
-| Include hidden folder   | Backup also the configurations, plugins, themes, and, snippets.                                                                                                    |
-| ZIP splitting size      | An large file are not good for handling, so this plug-in splits the backup ZIP into this size. This splitted ZIP files can be handled by 7Z or something archiver. |
+
+### General
+
+| Key                                  | Description                                                                                                                                                                             |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start backup at launch               | When the plug-in has been loaded, Differential backup will be created automatically.                                                                                                    |
+| Include hidden folder                | Backup also the configurations, plugins, themes, and, snippets.                                                                                                                         |
+| Backup Destination                   | Where to save the backup `Inside the vault`, `Anywhere (Desktop only)`, and `S3 bucket` are available. `Anywhere` is on the bleeding edge. Not safe. Only available on desktop devices. |
+| Restore folder                       | The folder which restored files will be stored.                                                                                                                                         |
+| Max files in a single zip            | How many files are stored in a single ZIP file.                                                                                                                                         |
+| Perform all files over the max files | Automatically process the remaining files, even if the number of files to be processed exceeds Max files.                                                                               |
+| ZIP splitting size                   | An large file are not good for handling, so this plug-in splits the backup ZIP into this size. This splitted ZIP files can be handled by 7Z or something archiver.                      |
+
+
+### On `Inside the vault`
+
+| Key           | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------------------ |
+| Backup folder | The folder which backups are stored. We can choose only the folder inside the vault. |
+
+### On `Anywhere (Desktop only)`
+
+| Key                     | Description                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Backup folder (desktop) | The folder which backups are stored (if enabling `Use Desktop Mode`). We can choose any folder (Absolute path recommended). |
+
+
+### On `S3 Compatible bucket`
+| Key                     | Description                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| Endpoint                | The endpoint of the S3 bucket.                                                        |
+| AccessKey               | The access key ID of the S3 bucket.                                                   |
+| SecretKey               | The secret access key of the S3 bucket.                                               |
+| Region                  | The region of the S3 bucket.                                                          |
+| Bucket                  | The name of the S3 bucket.                                                            |
+| Use Custom HTTP Handler | Use a custom HTTP handler for S3. This is useful for mobile devices services.         |
+| Backup folder           | The folder which backups are stored. We can choose only the folder inside the bucket. |
+
+#### Buttons 
+- `Test`: Test the connection to the S3 bucket.
+- `Create Bucket`: Create a bucket in the S3 bucket.
+
+
+## Misc
+
+### Reset Backup Information
+If you want to make a full backup, you can reset the backup information. This will make all files to be backed up.
+
+### Encryption
+If you configure the passphrase, the ZIP file will be encrypted by AES-256-CBC with the passphrase.
+
+>[!IMPORTANT]
+> Not compatible with the encrypted zip file. We have to decrypt the file by OpenSSL, without this plug-in.
+> Decryption command is `openssl enc -d -aes-256-cbc -in <encrypted file> -out <decrypted file> -k <passphrase> -pbkdf2 -md sha256`.
+
+
 
 
 ## What is `backupinfo.md`?
