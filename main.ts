@@ -195,7 +195,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		await client.putObject({
 			Bucket: this.settings.bucket,
 			Key: fullPath,
-			Body: new Blob([data], { type: "application/octet-stream" }),
+			Body: new Uint8Array(data),
 		});
 	}
 	async readBinaryS3(fullPath: string) {
