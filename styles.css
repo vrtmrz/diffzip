@@ -1,0 +1,22 @@
+.diffzip-dialog-header {
+	display: flex;
+	flex-direction: row;
+	flex-shrink: 0;
+	flex-direction: column;
+}
+
+.diffzip-list {
+	display: flex;
+	flex-direction: column;
+	flex-grow: 1;
+	overflow-y: auto;
+}
+
+.diffzip-dialog-footer {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 0.75em;
+	display: flex;
+	flex-direction: row;
+	flex-shrink: 0;
+	flex-direction: column;
+}

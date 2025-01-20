@@ -1,4 +1,3 @@
-import type { PlatformPath } from "node:path";
 import {
 	App,
 	FuzzySuggestModal,
@@ -6,17 +5,24 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	TFile,
-	normalizePath,
 	parseYaml,
 	stringifyYaml,
 } from "obsidian";
 import * as fflate from "fflate";
-import { S3 } from '@aws-sdk/client-s3';
-import { ObsHttpHandler } from "./ObsHttpHandler";
-import { decryptCompatOpenSSL, encryptCompatOpenSSL } from "./aes";
+import { getStorage, getStorageInstance, getStorageType, S3Bucket, type StorageAccessor } from "./storage";
+import { RestoreDialog } from "./RestoreView";
+import { confirmWithMessage } from "./dialog";
+import { Archiver, Extractor } from "./Archive";
+import { pieces } from "./util";
+import { decrypt, encrypt } from "octagonal-wheels/encryption";
 
 const InfoFile = `backupinfo.md`;
+
+enum AutoBackupType {
+	FULL = "",
+	ONLY_NEW = "only-new",
+	ONLY_NEW_AND_EXISTING = "only-new-and-existing",
+}
 
 interface DiffZipBackupSettings {
 	backupFolder?: string;
@@ -27,6 +33,7 @@ interface DiffZipBackupSettings {
 	maxFilesInZip: number;
 	performNextBackupOnMaxFiles: boolean;
 	startBackupAtLaunch: boolean;
+	startBackupAtLaunchType: AutoBackupType;
 	includeHiddenFolder: boolean;
 	desktopFolderEnabled: boolean;
 	BackupFolderDesktop: string;
@@ -44,6 +51,7 @@ interface DiffZipBackupSettings {
 
 const DEFAULT_SETTINGS: DiffZipBackupSettings = {
 	startBackupAtLaunch: false,
+	startBackupAtLaunchType: AutoBackupType.ONLY_NEW_AND_EXISTING,
 	backupFolderMobile: "backup",
 	BackupFolderDesktop: "c:\\temp\\backup",
 	backupFolderBucket: "backup",
@@ -64,13 +72,15 @@ const DEFAULT_SETTINGS: DiffZipBackupSettings = {
 	passphraseOfZip: "",
 };
 
-type FileInfo = {
+export type FileInfo = {
 	filename: string;
 	digest: string;
-	history: { zipName: string, modified: string }[];
+	history: { zipName: string, modified: string, missing?: boolean, processed?: number, digest: string }[];
 	mtime: number;
+	processed?: number;
+	missing?: boolean;
 };
-type FileInfos = Record<string, FileInfo>;
+export type FileInfos = Record<string, FileInfo>;
 
 type NoticeWithTimer = {
 	notice: Notice;
@@ -102,24 +112,30 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return this.isDesktopMode ? this.settings.BackupFolderDesktop : this.settings.backupFolderMobile;
 	}
 
+	_backups: StorageAccessor;
+	get backups(): StorageAccessor {
+		const type = getStorageType(this);
+		if (!this._backups || this._backups.type != type) {
+			this._backups = getStorage(this);
+		}
+		return this._backups;
+
+	}
+	_vaultAccess: StorageAccessor;
+	get vaultAccess(): StorageAccessor {
+		const type = this.settings.includeHiddenFolder ? "direct" : "normal";
+		if (!this._vaultAccess || this._vaultAccess.type != type) {
+			this._vaultAccess = getStorageInstance(type, this, undefined, true);
+		}
+		return this._vaultAccess;
+	}
+
 	get sep(): string {
 		//@ts-ignore
 		return this.isDesktopMode ? this.app.vault.adapter.path.sep : "/";
 	}
 
-	async getClient() {
-		const client = new S3({
-			endpoint: this.settings.endPoint,
-			region: this.settings.region,
-			forcePathStyle: true,
-			credentials: {
-				accessKeyId: this.settings.accessKey,
-				secretAccessKey: this.settings.secretKey
-			},
-			requestHandler: this.settings.useCustomHttpHandler ? new ObsHttpHandler(undefined, undefined) : undefined
-		})
-		return client;
-	}
+
 
 
 	messages = {} as Record<string, NoticeWithTimer>;
@@ -155,58 +171,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		console.log(`${dt}\t${message}`);
 	}
 
-	async ensureDirectory(fullPath: string) {
-		const pathElements = fullPath.split("/");
-		pathElements.pop();
-		let c = "";
-		for (const v of pathElements) {
-			c += v;
-			try {
-				await this.app.vault.createFolder(c);
-			} catch (ex) {
-				// basically skip exceptions.
-				if (ex.message && ex.message == "Folder already exists.") {
-					// especial this message is.
-				} else {
-					new Notice("Folder Create Error");
-					console.log(ex);
-				}
-			}
-			c += "/";
-		}
-	}
-	async ensureDirectoryDesktop(fullPath: string) {
 
-		//@ts-ignore
-		const delimiter = await this.app.vault.adapter.path.sep as string;
-		const pathElements = fullPath.split(delimiter);
-		pathElements.pop();
-		const mkPath = pathElements.join(delimiter);
-		//@ts-ignore
-		await this.app.vault.adapter.fsPromises.mkdir(mkPath, { recursive: true });
-	}
-
-	async writeBinaryDesktop(fullPath: string, data: ArrayBuffer) {
-		//@ts-ignore
-		await this.app.vault.adapter.fsPromises.writeFile(fullPath, Buffer.from(data));
-	}
-	async writeBinaryS3(fullPath: string, data: ArrayBuffer) {
-		const client = await this.getClient();
-		await client.putObject({
-			Bucket: this.settings.bucket,
-			Key: fullPath,
-			Body: new Uint8Array(data),
-		});
-	}
-	async readBinaryS3(fullPath: string) {
-		const client = await this.getClient();
-		const result = await client.getObject({
-			Bucket: this.settings.bucket,
-			Key: fullPath,
-		});
-		if (!result.Body) return false;
-		return await result.Body.transformToByteArray();
-	}
 	async getFiles(
 		path: string,
 		ignoreList: string[]
@@ -228,28 +193,16 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return files;
 	}
 
-	async normalizePath(path: string) {
 
-		if (this.settings.desktopFolderEnabled && !this.isMobile) {
-			//@ts-ignore
-			const f = this.app.vault.adapter.path as PlatformPath;
-			return f.normalize(path);
-		} else if (this.settings.bucketEnabled) {
-			return path;
-		} else {
-			return normalizePath(path);
-		}
-	}
 	async loadTOC() {
 		let toc = {} as FileInfos;
-		const tocFilePath = await this.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
-		const tocExist = await this.isExists(tocFilePath);
-
+		const tocFilePath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
+		const tocExist = await this.backups.isFileExists(tocFilePath);
 		if (tocExist) {
 			this.logWrite(`Loading Backup information`, "proc-index");
 			try {
-				const tocBin = await this.readBinaryAuto(tocFilePath);
-				if (tocBin == null) {
+				const tocBin = await this.backups.readTOC(tocFilePath);
+				if (tocBin == null || tocBin === false) {
 					this.logMessage(
 						`LOAD ERROR: Could not read Backup information`,
 						"proc-index"
@@ -292,93 +245,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		return this.app.vault.getFiles().map(e => e.path);
 	}
 
-	async readVaultFile(filename: string) {
-		if (this.settings.includeHiddenFolder) {
-			return await this.app.vault.adapter.readBinary(filename);
-		} else {
-			const f = this.app.vault.getAbstractFileByPath(filename);
-			if (f instanceof TFile) {
-				return await this.app.vault.readBinary(f);
-			}
-		}
-		return null;
-	}
-	async readVaultStat(filename: string) {
-		if (this.settings.includeHiddenFolder) {
-			return await this.app.vault.adapter.stat(filename);
-		} else {
-			const f = this.app.vault.getAbstractFileByPath(filename);
-			if (f instanceof TFile) {
-				return f.stat;
-			}
-		}
-		return null;
-	}
-
-	async writeFile(filename: string, content: ArrayBuffer) {
-		try {
-			const f = this.app.vault.getAbstractFileByPath(filename);
-			if (f instanceof TFile) {
-				await this.app.vault.modifyBinary(f, content);
-				return true;
-			} else if (f == null) {
-				// If it could not get by getAbstractFileByPath, try adapter function once.
-				try {
-					const stat = await this.app.vault.adapter.stat(filename);
-					if (stat?.type == "file") {
-						return await this.writeFileBinary(filename, content);
-					} else if (stat?.type == "folder") {
-						return false;
-					}
-				} catch (ex) {
-					//NO OP.
-
-				}
-				await this.ensureDirectory(filename);
-				await this.app.vault.createBinary(filename, content)
-				return true;
-
-			}
-		} catch (ex) {
-			console.dir(ex);
-		}
-		return false;
-	}
-	async writeFileBinary(filename: string, content: ArrayBuffer) {
-		await this.ensureDirectory(filename);
-		await this.app.vault.adapter.writeBinary(filename, content);
-		return true;
-	}
-	async writeBinaryAuto(filename: string, contentSource: ArrayBuffer) {
-		let content;
-		if (this.settings.passphraseOfZip) {
-			content = await encryptCompatOpenSSL(new Uint8Array(contentSource), this.settings.passphraseOfZip);
-		} else {
-			content = contentSource;
-		}
-		try {
-			if (this.isDesktopMode) {
-				await this.ensureDirectoryDesktop(filename);
-				await this.writeBinaryDesktop(filename, content);
-			} else if (this.settings.bucketEnabled) {
-				await this.writeBinaryS3(filename, content);
-			} else {
-				await this.ensureDirectory(filename);
-				const theFile = this.app.vault.getAbstractFileByPath(filename);
-				if (theFile == null) {
-					await this.app.vault.createBinary(filename, content)
-				} else {
-					await this.app.vault.modifyBinary(theFile as TFile, content)
-				}
-			}
-			return true;
-		} catch (ex) {
-			this.logMessage(`Could not write ${filename}`);
-			return false;
-		}
-	}
-
-	async createZip(verbosity: boolean, skippableFiles: string[] = []) {
+	async createZip(verbosity: boolean, skippableFiles: string[] = [], onlyNew = false, skipDeleted: boolean = false) {
 		const log = verbosity ? (msg: string, key?: string) => this.logWrite(msg, key) : (msg: string, key?: string) => this.logMessage(msg, key);
 
 		const allFiles = await this.getAllFiles();
@@ -389,87 +256,26 @@ export default class DiffZipBackupPlugin extends Plugin {
 
 		const newFileName = `${today.getFullYear()}-${today.getMonth() + 1
 			}-${today.getDate()}-${secondsInDay}.zip`;
-		const output = [] as Uint8Array[];
-		let aborted = false;
-		let finished = false;
-		const finishCompressing = async (abort: boolean) => {
-			if (finished) return;
-			finished = true;
-			aborted = abort;
-			if (!aborted) {
-				if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip && this.settings.performNextBackupOnMaxFiles) {
-					setTimeout(() => {
-						this.createZip(verbosity, [...skippableFiles, ...processedFiles]);
-					}, 10);
-				}
-			} else {
-				this.logMessage(
-					`Something get wrong while processing ${processed} files, ${zipped} zip files`,
-					"proc-zip-process"
-				);
+
+		// Find missing files
+		let missingFiles = 0;
+		for (const [filename, fileInfo] of Object.entries(toc)) {
+			if (fileInfo.missing) continue;
+			if (!await this.vaultAccess.isFileExists(this.vaultAccess.normalizePath(filename))) {
+				if (skipDeleted) continue;
+				fileInfo.missing = true;
+				fileInfo.digest = "";
+				fileInfo.mtime = today.getTime();
+				fileInfo.processed = today.getTime();
+				log(`File ${filename} is missing`);
+				fileInfo.history = [...fileInfo.history, { zipName: newFileName, modified: today.toISOString(), missing: true, processed: today.getTime(), digest: "" }];
+				log(`History of ${filename} has been updated (Missing)`);
+				missingFiles++;
 			}
 		}
-		const zip = new fflate.Zip(async (err, dat, final) => {
-			if (err) {
-				console.dir(err);
-				this.logMessage("Something occurred while archiving the backup, please check the result once");
-				return;
-			}
-			if (!err) {
-				this.logWrite("Updating ZIP..");
-				output.push(dat);
-				if (aborted) return;
-				if (final) {
-					if (zipped == 0) {
-						this.logMessage(
-							`Nothing has been changed! Generating ZIP has been skipped.`
-						);
-						return;
-					}
-					// Generate all concatenated Blob
-					const outZipBlob = new Blob(output);
-					let i = 0;
-					const buf = await outZipBlob.arrayBuffer();
 
-					// Writing a large file can cause the crash of Obsidian, and very heavy to synchronise.
-					// Hence, we have to split the file into a smaller size.
-					const step = (this.settings.maxSize / 1) == 0 ? buf.byteLength + 1 : ((this.settings.maxSize / 1)) * 1024 * 1024;
-					let pieceCount = 0;
-					if (buf.byteLength > step) pieceCount = 1;
-					while (i < buf.byteLength) {
-						const outZipFile = await this.normalizePath(`${this.backupFolder}${this.sep}${newFileName}${pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3)))}`)
-						pieceCount++;
-						this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
-						const e = await this.writeBinaryAuto(outZipFile, buf.slice(i, i + step));
-						if (e) {
-							this.logMessage(
-								`${outZipFile} has been created!`,
-								`proc-zip-process-write-${pieceCount}`);
-						} else {
-							this.logMessage(
-								`Creating ${outZipFile} has been failed!`,
-								`proc-zip-process-write-${pieceCount}`);
-							finishCompressing(true);
-							break;
-						}
-						i += step;
-						this.logMessage(
-							`${outZipFile} has been created!`,
-							`proc-zip-process-write-${pieceCount}`);
-					}
-					const tocFilePath = await this.normalizePath(
-						`${this.backupFolder}${this.sep}${InfoFile}`
-					);
-					if (aborted) return;
-					// Update TOC
-					if (!await this.writeBinaryAuto(tocFilePath, new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))) {
-						finishCompressing(true);
-					}
-					log(`Backup information has been updated`);
-					finishCompressing(false);
-				}
-			}
-		});
+		const zip = new Archiver();
+
 		const normalFiles = allFiles.filter(
 			(e) => !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
 		).filter(e => skippableFiles.indexOf(e) == -1);
@@ -477,132 +283,119 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const processedFiles = [] as string[];
 		let zipped = 0;
 		for (const path of normalFiles) {
-			if (aborted) break;
 			processedFiles.push(path);
-			this.logMessage(
-				`Backup processing ${processed}/${normalFiles.length}  ${verbosity ? `\n${path}` : ""}`,
-				"proc-zip-process"
-			);
-			const content = await this.readVaultFile(path);
-			if (!content) {
-				this.logMessage(
-					`Archiving:Could not read ${path}`,
-				);
+			processed++;
+			if (processed % 10 == 0) this.logMessage(`Backup processing ${processed}/${normalFiles.length}  ${verbosity ? `\n${path}` : ""}`, "proc-zip-process");
+			// Retrieve the file information
+			const stat = await this.vaultAccess.stat(path);
+			if (!stat) {
+				this.logMessage(`Archiving: Could not read stat ${path}`,);
 				continue;
 			}
+			// Check the file is in the skippable list
+			if (onlyNew && path in toc) {
+				const entry = toc[path];
+				const mtime = new Date(stat.mtime).getTime();
+				if (mtime <= entry.mtime) {
+					this.logWrite(`${path} older than the last backup, skipping`);
+					continue;
+				}
+			}
+			// Read the file content
+			const content = await this.vaultAccess.readBinary(path);
+			if (!content) {
+				this.logMessage(`Archiving: Could not read ${path}`,);
+				continue;
+			}
+
 			// Check the file actually modified.
 			const f = new Uint8Array(content);
 			const digest = await computeDigest(f);
-			processed++;
+
 			if (path in toc) {
 				const entry = toc[path];
 				if (entry.digest == digest) {
-					this.logWrite(
-						`${path} Not changed`
-					);
+					this.logWrite(`${path} Not changed`);
 					continue;
 				}
 			}
 			zipped++;
-			const stat = await this.readVaultStat(path);
-			if (!stat) {
-				this.logMessage(
-					`Archiving:Could not read stat ${path}`,
-				);
-				continue;
-			}
+
+			// Update the file information
 			toc[path] = {
 				digest,
 				filename: path,
 				mtime: stat.mtime,
-				history: [...toc[path]?.history ?? [], { zipName: newFileName, modified: new Date(stat.mtime).toISOString() }],
+				processed: today.getTime(),
+				history: [...toc[path]?.history ?? [], { zipName: newFileName, modified: new Date(stat.mtime).toISOString(), processed: today.getTime(), digest }],
 			};
-			const fflateFile = new fflate.ZipDeflate(path, {
-				level: 9,
-			});
-			fflateFile.mtime = stat.mtime;
-			this.logMessage(
-				`Archiving:${path} ${zipped}/${normalFiles.length}`,
-				"proc-zip-archive"
-			);
-			zip.add(fflateFile);
-			fflateFile.push(f, true);
+			this.logMessage(`Archiving: ${path} ${zipped}/${normalFiles.length}`, "proc-zip-archive");
+			zip.addFile(f, path, { mtime: stat.mtime });
 			if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip) {
-				this.logMessage(
-					`Max files in a single ZIP has been reached. The rest of the files will be archived in the next process`,
-					"finish"
-				);
+				this.logMessage(`Max files in a single ZIP has been reached. The rest of the files will be archived in the next process`, "finish");
 				break;
 			}
 		}
-		this.logMessage(
-			`All ${processed} files have been scanned, ${zipped} files are now compressing. please wait for a while`,
-			"proc-zip-process"
-		);
-		const fflateFile = new fflate.ZipDeflate(InfoFile, {
-			level: 9,
-		});
-		zip.add(fflateFile);
-		const t = new TextEncoder();
-		fflateFile.push(t.encode("```\n" + stringifyYaml(toc) + "\n```"), true);
-		zip.end();
-	}
+		this.logMessage(`All ${processed} files have been scanned, ${zipped} files are now compressing. please wait for a while`, "proc-zip-process");
+		if (zipped == 0 && missingFiles == 0) {
+			this.logMessage(`Nothing has been changed! Generating ZIP has been skipped.`);
+			return;
+		}
+		const tocTimeStamp = new Date().getTime();
+		zip.addTextFile(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`, InfoFile, { mtime: tocTimeStamp });
+		try {
+			const buf = await zip.finalize();
+			// Writing a large file can cause the crash of Obsidian, and very heavy to synchronise.
+			// Hence, we have to split the file into a smaller size.
+			const step = (this.settings.maxSize / 1) == 0 ? buf.byteLength + 1 : ((this.settings.maxSize / 1)) * 1024 * 1024;
+			let pieceCount = 0;
+			// If the file size is smaller than the step, it will be a single file.
+			// Otherwise, it will be split into multiple files. (start from 001)
+			if (buf.byteLength > step) pieceCount = 1;
+			const chunks = pieces(buf, step);
+			for (const chunk of chunks) {
+				const outZipFile = this.backups.normalizePath(`${this.backupFolder}${this.sep}${newFileName}${pieceCount == 0 ? "" : ("." + (`00${pieceCount}`.slice(-3)))}`)
+				pieceCount++;
+				this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
+				const e = await this.backups.writeBinary(outZipFile, chunk);
+				if (!e) {
+					throw new Error(`Creating ${outZipFile} has been failed!`);
+				}
+				this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
+			}
 
-	async isExists(path: string) {
-		if (this.isDesktopMode) {
-			try {
-				//@ts-ignore
-				const _ = await this.app.vault.adapter.fsPromises.stat(path);
-				return true;
-			} catch (ex) {
-				// NO OP.
+			const tocFilePath = this.backups.normalizePath(
+				`${this.backupFolder}${this.sep}${InfoFile}`
+			);
+
+			// Update TOC
+			if (!await this.backups.writeTOC(tocFilePath, new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))) {
+				throw new Error(`Updating TOC has been failed!`);
 			}
-			return false;
-		} else if (this.settings.bucketEnabled) {
-			const client = await this.getClient();
-			try {
-				await client.headObject({
-					Bucket: this.settings.bucket,
-					Key: path,
-				});
-				return true;
-			} catch (ex) {
-				return false
+			log(`Backup information has been updated`);
+			if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip && this.settings.performNextBackupOnMaxFiles) {
+				setTimeout(() => {
+					this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
+				}, 10);
+			} else {
+				this.logMessage(`All ${processed} files have been processed, ${zipped} files have been zipped.`, "proc-zip-process");
 			}
-		} else {
-			return this.app.vault.getAbstractFileByPath(path) != null;
+			// } else {
+			// 	this.logMessage(`Backup has been aborted \n${processed} files, ${zipped} zip files`, "proc-zip-process");
+			// }
+		} catch (e) {
+			this.logMessage(`Something get wrong while processing ${processed} files, ${zipped} zip files`, "proc-zip-process");
+			this.logWrite(e);
 		}
-	}
-	async readBinaryAuto(path: string): Promise<ArrayBuffer | null> {
-		const encryptedData = await this.readBinaryAuto_(path);
-		if (!encryptedData) return null;
-		if (this.settings.passphraseOfZip) {
-			return await decryptCompatOpenSSL(new Uint8Array(encryptedData), this.settings.passphraseOfZip);
-		}
-		return encryptedData;
-	}
-	async readBinaryAuto_(path: string): Promise<ArrayBuffer | null> {
-		if (this.isDesktopMode) {
-			//@ts-ignore
-			return (await this.app.vault.adapter.fsPromises.readFile(path)).buffer;
-		} else if (this.settings.bucketEnabled) {
-			const r = await this.readBinaryS3(path);
-			if (!r) return null;
-			return r.buffer;
-		} else {
-			const f = this.app.vault.getAbstractFileByPath(path);
-			if (f instanceof TFile) {
-				return await this.app.vault.readBinary(f);
-			}
-		}
-		return null;
 	}
 
 	async extract(zipFile: string, extractFiles: string[]): Promise<void>
-	async extract(zipFile: string, extractFiles: string, restoreAs?: string): Promise<void>
-	async extract(zipFile: string, extractFiles: string | string[], restoreAs?: string): Promise<void> {
-		const zipPath = await this.normalizePath(`${this.backupFolder}${this.sep}${zipFile}`);
-		const zipF = await this.isExists(zipPath);
+	async extract(zipFile: string, extractFiles: string, restoreAs: string): Promise<void>
+	async extract(zipFile: string, extractFiles: string[], restoreAs: undefined, restorePrefix: string): Promise<void>
+	async extract(zipFile: string, extractFiles: string | string[], restoreAs: string | undefined = undefined, restorePrefix: string = ""): Promise<void> {
+		const hasMultipleSupplied = Array.isArray(extractFiles);
+		const zipPath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${zipFile}`);
+		const zipF = await this.backups.isExists(zipPath);
 		let files = [] as string[];
 		if (zipF) {
 			files = [zipPath]
@@ -612,7 +405,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 			do {
 				counter++;
 				const partialZipPath = zipPath + "." + `00${counter}`.slice(-3)
-				if (await this.isExists(partialZipPath)) {
+				if (await this.backups.isExists(partialZipPath)) {
 					files.push(partialZipPath);
 				} else {
 					hasNext = false;
@@ -622,77 +415,43 @@ export default class DiffZipBackupPlugin extends Plugin {
 		if (files.length == 0) {
 			this.logMessage("Archived ZIP files were not found!");
 		}
-		const unzipper = new fflate.Unzip();
-		unzipper.register(fflate.UnzipInflate);
-		const targets = typeof extractFiles == "string" ? [extractFiles] : extractFiles;
-		// When the target file has been extracted, extracted will be true.
-		let extracted = false;
-		unzipper.onfile = file => {
-			if (targets.indexOf(file.name) !== -1) {
-				this.logMessage(
-					`${file.name} Found`,
-					"proc-zip-export"
-				);
-				file.ondata = async (_, dat, __) => {
-					extracted = true;
-					// Stream output here
-					this.logMessage(
-						`${file.name} Read`,
-						"proc-zip-export"
-					);
-					const restoreTo = restoreAs ? restoreAs : file.name;
-					if (await this.writeFile(restoreTo, dat.buffer)) {
-						this.logMessage(
-							`${file.name} has been overwritten!`,
-							"proc-zip-export"
-						);
-					} else {
-						this.logMessage(
-							`Creating or Overwriting ${file.name} has been failed!`,
-							"proc-zip-export"
-						);
-					}
-				};
+		const restored = [] as string[];
 
-				this.logMessage(
-					`${file.name} Reading...`,
-					"proc-zip-export"
-				);
-				file.start();
+		const extractor = new Extractor(
+			(file: fflate.UnzipFile) => {
+				if (hasMultipleSupplied) {
+					return extractFiles.indexOf(file.name) !== -1;
+				}
+				return file.name === extractFiles;
+			},
+			async (file: string, dat: Uint8Array) => {
+				const fileName = restoreAs ?? file;
+				const restoreTo = hasMultipleSupplied ? `${restorePrefix}${fileName}` : fileName;
+				if (await this.vaultAccess.writeBinary(restoreTo, dat)) {
+					restored.push(restoreTo);
+					const files = restored.slice(-5).join("\n");
+					this.logMessage(`${restored.length} files have been restored! \n${files}\n...`, "proc-zip-extract");
+				} else {
+					this.logMessage(`Creating or Overwriting ${file} has been failed!`);
+				}
 			}
-		};
-		let idx = 0;
-		for (const f of files) {
-			idx++;
-			this.logMessage(
-				`Processing ${f}...`,
-				"proc-zip-export-processing"
-			);
-			const binary = await this.readBinaryAuto(f);
-			if (binary == null) {
-				this.logMessage(
-					`Could not read ${f}`,
-					"proc-zip-export-processing"
-				);
+		);
+
+		const size = 1024 * 1024;
+		for (const file of files) {
+			this.logMessage(`Processing ${file}...`, "proc-zip-export-processing");
+			const binary = await this.backups.readBinary(file);
+			if (binary == null || binary === false) {
+				this.logMessage(`Could not read ${file}`);
 				return;
 			}
-			const buf = new Uint8Array(binary);
-			const step = 1024 * 1024; // Possibly fails
-			let i = 0;
-			while (i < buf.byteLength) {
-				// If already extract has completed, stop parsing subsequent chunks
-				const isCompleted = extracted || (i + step > buf.byteLength && idx == files.length);
-				unzipper.push(buf.slice(i, i + step), isCompleted);
-				if (extracted) break;
-				i += step;
+			const chunks = pieces(new Uint8Array(binary), size);
+			for await (const chunk of chunks) {
+				extractor.addZippedContent(chunk);
 			}
-			if (extracted) break;
 		}
-		this.logMessage(
-			`All ZIP files has been read.`,
-			"proc-zip-export-processing"
-		);
 	}
+
 
 	async selectAndRestore() {
 		const files = await this.loadTOC();
@@ -723,7 +482,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const restoreMethods = [RESTORE_TO_RESTORE_FOLDER, RESTORE_OVERWRITE, RESTORE_WITH_SUFFIX]
 		const howToRestore = await askSelectString(this.app, "Where to restore?", restoreMethods);
 		const restoreAs = howToRestore == RESTORE_OVERWRITE ? selected : (
-			howToRestore == RESTORE_TO_RESTORE_FOLDER ? normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`) :
+			howToRestore == RESTORE_TO_RESTORE_FOLDER ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`) :
 				((howToRestore == RESTORE_WITH_SUFFIX) ? `${selectedWithoutExt}-${suffix}.${ext}` : "")
 		)
 		if (!restoreAs) {
@@ -874,7 +633,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 		const restoreMethods = [RESTORE_TO_RESTORE_FOLDER, RESTORE_OVERWRITE, RESTORE_WITH_SUFFIX]
 		const howToRestore = await askSelectString(this.app, "Where to restore?", restoreMethods);
 		const restoreAs = howToRestore == RESTORE_OVERWRITE ? selected : (
-			howToRestore == RESTORE_TO_RESTORE_FOLDER ? normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`) :
+			howToRestore == RESTORE_TO_RESTORE_FOLDER ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`) :
 				((howToRestore == RESTORE_WITH_SUFFIX) ? `${selectedWithoutExt}-${suffix}.${ext}` : "")
 		)
 		if (!restoreAs) {
@@ -882,11 +641,131 @@ export default class DiffZipBackupPlugin extends Plugin {
 		}
 		await this.extract(filename, selected, restoreAs);
 	}
-
+	// _debugDialogue?: RestoreDialog;
 	async onLayoutReady() {
+		// if (this._debugDialogue) {
+		// 	this._debugDialogue.close();
+		// 	this._debugDialogue = undefined;
+		// }
 		if (this.settings.startBackupAtLaunch) {
-			this.createZip(false);
+			const onlyNew = this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW || this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW_AND_EXISTING;
+			const skipDeleted = this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW_AND_EXISTING;
+			this.createZip(false, [], onlyNew, skipDeleted);
 		}
+		// this._debugDialogue = new RestoreDialog(this.app, this);
+		// this._debugDialogue.open();
+	}
+	// onunload(): void {
+	// 	this._debugDialogue?.close();
+	// }
+
+	async restoreVault(onlyNew = true, deleteMissing: boolean = false, fileFilter: Record<string, number> | undefined = undefined, prefix: string = "") {
+		this.logMessage(`Checking backup information...`);
+		const files = await this.loadTOC();
+		// const latestZipMap = new Map<string, string>();
+		const zipFileMap = new Map<string, string[]>();
+		const thisPluginDir = this.manifest.dir;
+		const deletingFiles = [] as string[];
+		let processFileCount = 0;
+		for (const [filename, fileInfo] of Object.entries(files)) {
+			if (fileFilter) {
+				const matched = Object.keys(fileFilter).filter(e => e.endsWith("*") ? filename.startsWith(e.slice(0, -1)) : e == filename).sort((a, b) => b.length - a.length);
+				if (matched.length == 0) {
+					this.logWrite(`${filename}: is not matched with supplied filter. Skipping...`);
+					continue;
+				}
+				const matchedFilter = matched[0];
+				// remove history after the filter
+				fileInfo.history = fileInfo.history.filter(e => new Date(e.modified).getTime() <= fileFilter[matchedFilter]);
+			}
+			if (thisPluginDir && fileInfo.filename.startsWith(thisPluginDir)) {
+				this.logWrite(`${filename} is a plugin file. Skipping on vault restoration`);
+				continue;
+			}
+			const history = fileInfo.history;
+			if (history.length == 0) {
+				this.logWrite(`${filename}: has no history. Skipping...`);
+				continue;
+			}
+			history.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+			const latest = history[0];
+			const zipName = latest.zipName;
+			const localFileName = this.vaultAccess.normalizePath(`${prefix}${filename}`);
+			const localStat = await this.vaultAccess.stat(localFileName);
+			if (localStat) {
+				const content = await this.vaultAccess.readBinary(localFileName);
+				if (!content) {
+					this.logWrite(`${filename}: has been failed to read`);
+					continue;
+				}
+				const localDigest = await computeDigest(new Uint8Array(content));
+				if (localDigest == latest?.digest) {
+					this.logWrite(`${filename}: is as same as the backup. Skipping...`);
+					continue;
+				}
+				if (fileInfo.missing) {
+					if (!deleteMissing) {
+						this.logWrite(`${filename}: is marked as missing, but existing in the vault. Skipping...`);
+						continue;
+					} else {
+						// this.logWrite(`${filename}: is marked as missing. Deleting...`);
+						deletingFiles.push(filename);
+						//TODO: Delete the file
+					}
+
+				}
+				const localMtime = localStat.mtime;
+				const remoteMtime = new Date(latest.modified).getTime();
+				if (onlyNew && localMtime >= remoteMtime) {
+					this.logWrite(`${filename}: Ours is newer than the backup. Skipping...`);
+					continue;
+				}
+			} else {
+				if (fileInfo.missing) {
+					this.logWrite(`${filename}: is missing and not found in the vault. Skipping...`);
+					continue;
+				}
+			}
+			this.logWrite(`${filename}: will be restored from ${zipName}`);
+			if (!zipFileMap.has(zipName)) {
+				zipFileMap.set(zipName, []);
+			}
+			zipFileMap.get(zipName)?.push(filename);
+			processFileCount++;
+
+
+			// latestZipMap.set(filename, zipName);
+		}
+		if (processFileCount == 0 && deletingFiles.length == 0) {
+			this.logMessage(`Nothing to restore`);
+			return;
+		}
+		const detailFiles = `<details>
+
+${[...zipFileMap.entries()].map(e => `${e[1].map(ee => `- ${ee}  (${e[0]})`).join("\n")}\n`)
+				.sort((a, b) => a.localeCompare(b)).
+				join("")}
+
+
+</details>`;
+		const detailDeletedFiles = `<details>
+
+${deletingFiles.map(e => `- ${e}`).join("\n")}
+
+</details>`;
+		const deleteMessage = deleteMissing && deletingFiles.length > 0 ? `And ${deletingFiles.length} files will be deleted.\n${detailDeletedFiles}\n` : "";
+		const message = `We have ${processFileCount} files to restore on ${zipFileMap.size} ZIPs. \n${detailFiles}\n${deleteMessage}Are you sure to proceed?`;
+		const RESTORE_BUTTON = "Yes, restore them!";
+		const CANCEL = "Cancel";
+		if (await confirmWithMessage(this, "Restore Confirmation", message, [RESTORE_BUTTON, CANCEL], CANCEL) != RESTORE_BUTTON) {
+			this.logMessage(`Cancelled`);
+			return;
+		}
+		for (const [zipName, files] of zipFileMap) {
+			this.logMessage(`Extracting ${zipName}...`);
+			await this.extract(zipName, files, undefined, prefix);
+		}
+		// console.dir(zipFileMap);
 	}
 	async onload() {
 		await this.loadSettings();
@@ -897,12 +776,21 @@ export default class DiffZipBackupPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => this.onLayoutReady());
 
 		this.addCommand({
-			id: "find-from-backups",
+			id: "a-find-from-backups",
 			name: "Restore from backups",
+			callback: async () => {
+				const d = new RestoreDialog(this.app, this);
+				d.open();
+			},
+		})
+		this.addCommand({
+			id: "find-from-backups-old",
+			name: "Restore from backups (previous behaviour)",
 			callback: async () => {
 				await this.selectAndRestore();
 			},
 		})
+
 		this.addCommand({
 			id: "find-from-backups-dir",
 			name: "Restore from backups per folder",
@@ -911,15 +799,50 @@ export default class DiffZipBackupPlugin extends Plugin {
 			},
 		})
 		this.addCommand({
-			id: "create-diff-zip",
+			id: "b-create-diff-zip",
 			name: "Create Differential Backup",
 			callback: () => {
 				this.createZip(true);
 			},
 		})
+		this.addCommand({
+			id: "b-create-diff-zip-only-new",
+			name: "Create Differential Backup Only Newer Files",
+			callback: () => {
+				this.createZip(true, [], true);
+			},
+		})
+		this.addCommand({
+			id: "b-create-diff-zip-only-new-and-existing",
+			name: "Create Non-Destructive Differential Backup",
+			callback: () => {
+				this.createZip(true, [], false, true);
+			},
+		})
+		this.addCommand({
+			id: "b-create-diff-zip-only-new-and-existing-only-new",
+			name: "Create Non-Destructive Differential Backup Only Newer Files",
+			callback: () => {
+				this.createZip(true, [], true, true);
+			},
+		})
+
+		this.addCommand({
+			id: "vault-restore-from-backups-only-new",
+			name: "Fetch all new files from the backups",
+			callback: async () => {
+				await this.restoreVault(true, false);
+			},
+		})
+		this.addCommand({
+			id: "vault-restore-from-backups-with-deletion",
+			name: "⚠ Restore Vault from backups and delete with deletion",
+			callback: async () => {
+				await this.restoreVault(false, true);
+			},
+		})
 		this.addSettingTab(new DiffZipSettingTab(this.app, this));
 	}
-
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
@@ -930,11 +853,11 @@ export default class DiffZipBackupPlugin extends Plugin {
 
 	async resetToC() {
 		const toc = {} as FileInfos;
-		const tocFilePath = await this.normalizePath(
+		const tocFilePath = this.backups.normalizePath(
 			`${this.backupFolder}${this.sep}${InfoFile}`
 		);
 		// Update TOC
-		if (await this.writeBinaryAuto(tocFilePath, new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))) {
+		if (await this.backups.writeTOC(tocFilePath, new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))) {
 			this.logMessage(`Backup information has been reset`);
 		} else {
 			this.logMessage(`Backup information cannot reset`);
@@ -967,6 +890,21 @@ class DiffZipSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.startBackupAtLaunch)
 					.onChange(async (value) => {
 						this.plugin.settings.startBackupAtLaunch = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Auto backup style")
+			.setDesc("If you want to backup automatically, select the type of backup")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption(AutoBackupType.FULL, "Full")
+					.addOption(AutoBackupType.ONLY_NEW, "Only New")
+					.addOption(AutoBackupType.ONLY_NEW_AND_EXISTING, "Non-destructive")
+					.setValue(this.plugin.settings.startBackupAtLaunchType)
+					.onChange(async (value) => {
+						this.plugin.settings.startBackupAtLaunchType = value as AutoBackupType;
 						await this.plugin.saveSettings();
 					})
 			);
@@ -1086,7 +1024,8 @@ class DiffZipSettingTab extends PluginSettingTab {
 				.addButton((button) =>
 					button.setButtonText("Test")
 						.onClick(async () => {
-							const client = await this.plugin.getClient();
+							const testS3Adapter = new S3Bucket(this.plugin);
+							const client = await testS3Adapter.getClient();
 							try {
 								const buckets = await client.listBuckets();
 								if (buckets.Buckets?.map(e => e.Name).indexOf(this.plugin.settings.bucket) !== -1) {
@@ -1103,7 +1042,8 @@ class DiffZipSettingTab extends PluginSettingTab {
 				.addButton((button) =>
 					button.setButtonText("Create Bucket")
 						.onClick(async () => {
-							const client = await this.plugin.getClient();
+							const testS3Adapter = new S3Bucket(this.plugin);
+							const client = await testS3Adapter.getClient();
 							try {
 								await client.createBucket({
 									Bucket: this.plugin.settings.bucket,
@@ -1221,9 +1161,69 @@ class DiffZipSettingTab extends PluginSettingTab {
 					}).inputEl.type = "password"
 			);
 
+		containerEl.createEl("h2", { text: "Tools" });
+		let passphrase = "";
+		new Setting(containerEl)
+			.setName("Passphrase")
+			.setDesc("You can encrypt the settings with a passphrase")
+			.addText((text) =>
+				text
+					.setPlaceholder("Passphrase")
+					.setValue(passphrase)
+					.onChange(async (value) => {
+						passphrase = value;
+						await this.plugin.saveSettings();
+					}).inputEl.type = "password"
+			);
+
+		new Setting(containerEl)
+			.setName("Copy setting to another device via URI")
+			.setDesc("You can copy the settings to another device by URI")
+			.addButton(button => {
+				button.setButtonText("Copy to Clipboard")
+					.onClick(async () => {
+						const setting = JSON.stringify(this.plugin.settings);
+						const encrypted = await encrypt(setting, passphrase, false);
+						const uri = `obsidian://diffzip/settings?data=${encodeURIComponent(encrypted)}`;
+						await navigator.clipboard.writeText(uri);
+						new Notice("URI has been copied to the clipboard");
+					})
+			})
+		let copiedURI = "";
+		new Setting(containerEl)
+			.setName("Paste setting from another device")
+			.setDesc("You can paste the settings from another device by URI")
+			.addText(text => {
+				text.setPlaceholder("obsidian://diffzip/settings?data=....")
+					.setValue(copiedURI)
+					.onChange(async (value) => {
+						copiedURI = value;
+					})
+			}).addButton(button => {
+				button.setButtonText("Apply")
+				button.setWarning()
+				button.onClick(async () => {
+					const uri = copiedURI;
+					const data = decodeURIComponent(uri.split("?data=")[1]);
+					try {
+						const decrypted = await decrypt(data, passphrase, false);
+						const settings = JSON.parse(decrypted);
+						if (await askSelectString(this.app, "Are you sure to overwrite the settings?", ["Yes", "No"]) == "Yes") {
+							Object.assign(this.plugin.settings, settings);
+							await this.plugin.saveSettings();
+							this.display();
+						} else {
+							new Notice("Cancelled");
+						}
+					} catch (e) {
+						new Notice("Failed to decrypt the settings");
+						console.warn(e);
+					}
+				})
+			})
+
 	}
 }
-
 
 
 class PopOverSelectString extends FuzzySuggestModal<string> {

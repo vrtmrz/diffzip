@@ -32,6 +32,7 @@ We can store all the files which have been modified, into a ZIP file.
 | Key                                  | Description                                                                                                                                                                             |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Start backup at launch               | When the plug-in has been loaded, Differential backup will be created automatically.                                                                                                    |
+| Auto backup style | Check differences to... `Full` to all files, `Only new` to the files which were newer than the backup, `Non-destructive` as same as Only new but not includes the deletion. |
 | Include hidden folder                | Backup also the configurations, plugins, themes, and, snippets.                                                                                                                         |
 | Backup Destination                   | Where to save the backup `Inside the vault`, `Anywhere (Desktop only)`, and `S3 bucket` are available. `Anywhere` is on the bleeding edge. Not safe. Only available on desktop devices. |
 | Restore folder                       | The folder which restored files will be stored.                                                                                                                                         |
@@ -68,6 +69,14 @@ We can store all the files which have been modified, into a ZIP file.
 - `Test`: Test the connection to the S3 bucket.
 - `Create Bucket`: Create a bucket in the S3 bucket.
 
+#### Tools
+Here are some tools to manage settings among your devices.
+
+| Key                     | Description                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| Passphrase                | Passphrase for encrypting/decrypting the configuration. Please write this down as it will not be saved.  |
+| Copy setting to another device via URI               | When the button is clicked, the URI will be copied to the clipboard. Paste it to another device to copy the settings. |
+| Paste setting from another device                | Paste the URI from another device to copy the settings, and click `Apply` button. |
 
 ## Misc
 
