@@ -1,6 +1,6 @@
 {
 	"name": "diffzip",
-	"version": "0.0.12",
+	"version": "0.0.13",
 	"description": "Differential ZIP Backup",
 	"main": "main.js",
 	"scripts": {
