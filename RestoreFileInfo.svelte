@@ -1,6 +1,6 @@
 <script lang="ts">
 	import DiffZipBackupPlugin from "./main";
-	import type { FileInfos } from "./main";
+	import type { FileInfos } from "types";
 	import { LATEST, type ListOperations } from "./RestoreView";
 
 	interface Props {
