@@ -40,7 +40,7 @@ export function getStorageTypeForBackupAccess(plugin: DiffZipBackupPlugin): Stor
     } else if (plugin.settings.bucketEnabled) {
         return StorageAccessorTypes.S3;
     } else {
-        return StorageAccessorTypes.NORMAL;
+        return StorageAccessorTypes.DIRECT;
     }
 }
 export function getStorageTypeForVaultAccess(plugin: DiffZipBackupPlugin): StorageAccessorType {
