@@ -1,9 +1,9 @@
 import { PluginSettingTab, type App, Setting, Notice } from "obsidian";
 import { encrypt, decrypt } from "octagonal-wheels/encryption.js";
-import DiffZipBackupPlugin from "./main";
-import { askSelectString } from "dialog";
-import { S3Bucket } from "./storage";
-import { AutoBackupType } from "./types";
+import DiffZipBackupPlugin from "../main.ts";
+import { askSelectString } from "./dialog.ts";
+import { S3Bucket } from "./StorageAccessor/S3Bucket.ts";
+import { AutoBackupType } from "./types.ts";
 
 export class DiffZipSettingTab extends PluginSettingTab {
     plugin: DiffZipBackupPlugin;
@@ -59,8 +59,8 @@ export class DiffZipSettingTab extends PluginSettingTab {
         let backupDestination = this.plugin.settings.desktopFolderEnabled
             ? "desktop"
             : this.plugin.settings.bucketEnabled
-              ? "s3"
-              : "";
+                ? "s3"
+                : "";
 
         new Setting(containerEl)
             .setName("Backup Destination")
@@ -284,13 +284,13 @@ export class DiffZipSettingTab extends PluginSettingTab {
             )
             .addText(
                 (text) =>
-                    (text
-                        .setPlaceholder("Passphrase")
-                        .setValue(this.plugin.settings.passphraseOfZip)
-                        .onChange(async (value) => {
-                            this.plugin.settings.passphraseOfZip = value;
-                            await this.plugin.saveSettings();
-                        }).inputEl.type = "password")
+                (text
+                    .setPlaceholder("Passphrase")
+                    .setValue(this.plugin.settings.passphraseOfZip)
+                    .onChange(async (value) => {
+                        this.plugin.settings.passphraseOfZip = value;
+                        await this.plugin.saveSettings();
+                    }).inputEl.type = "password")
             );
 
         containerEl.createEl("h2", { text: "Tools" });
@@ -300,13 +300,13 @@ export class DiffZipSettingTab extends PluginSettingTab {
             .setDesc("You can encrypt the settings with a passphrase")
             .addText(
                 (text) =>
-                    (text
-                        .setPlaceholder("Passphrase")
-                        .setValue(passphrase)
-                        .onChange(async (value) => {
-                            passphrase = value;
-                            await this.plugin.saveSettings();
-                        }).inputEl.type = "password")
+                (text
+                    .setPlaceholder("Passphrase")
+                    .setValue(passphrase)
+                    .onChange(async (value) => {
+                        passphrase = value;
+                        await this.plugin.saveSettings();
+                    }).inputEl.type = "password")
             );
 
         new Setting(containerEl)

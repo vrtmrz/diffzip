@@ -65,3 +65,7 @@ export type NoticeWithTimer = {
     notice: Notice;
     timer?: ReturnType<typeof setTimeout>;
 };
+
+
+export type XByteArray = Uint8Array<ArrayBuffer>;
+export type XDataView = DataView<ArrayBuffer>;

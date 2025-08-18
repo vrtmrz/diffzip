@@ -1,5 +1,6 @@
 import * as fflate from "fflate";
 import { promiseWithResolver } from "octagonal-wheels/promises";
+import type { XByteArray } from "./types.ts";
 
 /**
  * A class to archive files
@@ -7,7 +8,7 @@ import { promiseWithResolver } from "octagonal-wheels/promises";
 export class Archiver {
     _zipFile: fflate.Zip;
     _aborted: boolean = false;
-    _output: Uint8Array[] = [];
+    _output: XByteArray[] = [];
     _processedCount: number = 0;
     _processedLength: number = 0;
     _archivedCount: number = 0;
@@ -19,8 +20,8 @@ export class Archiver {
         // )
     }
 
-    _zipFilePromise = promiseWithResolver<Uint8Array>();
-    get archivedZipFile(): Promise<Uint8Array> {
+    _zipFilePromise = promiseWithResolver<XByteArray>();
+    get archivedZipFile(): Promise<XByteArray> {
         return this._zipFilePromise.promise;
     }
 
@@ -29,11 +30,11 @@ export class Archiver {
     }
 
     constructor() {
-        const zipFile = new fflate.Zip(async (error, dat, final) => this._onProgress(error, dat, final));
+        const zipFile = new fflate.Zip(async (error, dat: XByteArray, final) => this._onProgress(error, dat, final));
         this._zipFile = zipFile;
     }
 
-    _onProgress(err: fflate.FlateError | null, data: Uint8Array, final: boolean) {
+    _onProgress(err: fflate.FlateError | null, data: XByteArray, final: boolean) {
         if (err) return this._onError(err);
         if (data && data.length > 0) {
             this._output.push(data);
@@ -67,7 +68,7 @@ export class Archiver {
         this.addFile(binary, path, options);
     }
 
-    addFile(file: Uint8Array, path: string, options?: { mtime?: number }): void {
+    addFile(file: XByteArray, path: string, options?: { mtime?: number }): void {
         const fflateFile = new fflate.ZipDeflate(path, { level: 9 });
         fflateFile.mtime = options?.mtime ?? Date.now();
         this._processedLength += file.length;
@@ -90,7 +91,7 @@ export class Archiver {
 export class Extractor {
     _zipFile: fflate.Unzip;
     _isFileShouldBeExtracted: (file: fflate.UnzipFile) => boolean | Promise<boolean>;
-    _onExtracted: (filename: string, content: Uint8Array) => Promise<void>;
+    _onExtracted: (filename: string, content: XByteArray) => Promise<void>;
 
     constructor(isFileShouldBeExtracted: Extractor["_isFileShouldBeExtracted"], callback: Extractor["_onExtracted"]) {
         const unzipper = new fflate.Unzip();
@@ -100,8 +101,8 @@ export class Extractor {
         this._onExtracted = callback;
         unzipper.onfile = async (file: fflate.UnzipFile) => {
             if (await this._isFileShouldBeExtracted(file)) {
-                const data: Uint8Array[] = [];
-                file.ondata = async (err, dat, isFinal) => {
+                const data: XByteArray[] = [];
+                file.ondata = async (err, dat: XByteArray, isFinal) => {
                     if (err) {
                         console.error("Error extracting file", err);
                         return;
@@ -119,7 +120,7 @@ export class Extractor {
         };
     }
 
-    addZippedContent(data: Uint8Array, isFinal = false) {
+    addZippedContent(data: XByteArray, isFinal = false) {
         this._zipFile.push(data, isFinal);
     }
 

@@ -1,10 +1,11 @@
 import { Notice, Plugin, parseYaml, stringifyYaml } from "obsidian";
 import * as fflate from "fflate";
-import { getStorage, getStorageInstance, getStorageType, type StorageAccessor } from "./storage";
-import { RestoreDialog } from "./RestoreView";
-import { confirmWithMessage } from "./dialog";
-import { Archiver, Extractor } from "./Archive";
-import { computeDigest, pieces } from "./util";
+import { getStorageForBackup, getStorageForVault, getStorageInstance, getStorageTypeForBackupAccess, getStorageTypeForVaultAccess, StorageAccessorTypes, } from "./src/storage.ts";
+import { type StorageAccessor } from "./src/StorageAccessor/StorageAccessor.ts";
+import { RestoreDialog } from "./src/RestoreView.ts";
+import { confirmWithMessage, askSelectString } from "./src/dialog.ts";
+import { Archiver, Extractor } from "./src/Archive.ts";
+import { computeDigest, pieces, toArrayBuffer } from "./src/util.ts";
 import {
     AutoBackupType,
     DEFAULT_SETTINGS,
@@ -13,9 +14,8 @@ import {
     type FileInfo,
     type FileInfos,
     type NoticeWithTimer,
-} from "./types";
-import { DiffZipSettingTab } from "./DiffZipSettingTab";
-import { askSelectString } from "dialog";
+} from "./src/types.ts";
+import { DiffZipSettingTab } from "./src/DiffZipSettingTab.ts";
 
 export default class DiffZipBackupPlugin extends Plugin {
     settings: DiffZipBackupSettings;
@@ -35,17 +35,17 @@ export default class DiffZipBackupPlugin extends Plugin {
 
     _backups: StorageAccessor;
     get backups(): StorageAccessor {
-        const type = getStorageType(this);
+        const type = getStorageTypeForBackupAccess(this);
         if (!this._backups || this._backups.type != type) {
-            this._backups = getStorage(this);
+            this._backups = getStorageForBackup(this);
         }
         return this._backups;
     }
     _vaultAccess: StorageAccessor;
     get vaultAccess(): StorageAccessor {
-        const type = this.settings.includeHiddenFolder ? "direct" : "normal";
+        const type = getStorageTypeForVaultAccess(this);
         if (!this._vaultAccess || this._vaultAccess.type != type) {
-            this._vaultAccess = getStorageInstance(type, this, undefined, true);
+            this._vaultAccess = getStorageForVault(this);
         }
         return this._vaultAccess;
     }
@@ -293,7 +293,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 );
                 pieceCount++;
                 this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
-                const e = await this.backups.writeBinary(outZipFile, chunk);
+                const e = await this.backups.writeBinary(outZipFile, toArrayBuffer(chunk));
                 if (!e) {
                     throw new Error(`Creating ${outZipFile} has been failed!`);
                 }
@@ -306,8 +306,8 @@ export default class DiffZipBackupPlugin extends Plugin {
             if (
                 !(await this.backups.writeTOC(
                     tocFilePath,
-                    new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`)
-                ))
+                    toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`)))
+                )
             ) {
                 throw new Error(`Updating TOC has been failed!`);
             }
@@ -378,10 +378,10 @@ export default class DiffZipBackupPlugin extends Plugin {
                 }
                 return file.name === extractFiles;
             },
-            async (file: string, dat: Uint8Array) => {
+            async (file: string, dat: Uint8Array<ArrayBuffer>) => {
                 const fileName = restoreAs ?? file;
                 const restoreTo = hasMultipleSupplied ? `${restorePrefix}${fileName}` : fileName;
-                if (await this.vaultAccess.writeBinary(restoreTo, dat)) {
+                if (await this.vaultAccess.writeBinary(restoreTo, toArrayBuffer(dat))) {
                     restored.push(restoreTo);
                     const files = restored.slice(-5).join("\n");
                     this.logMessage(`${restored.length} files have been restored! \n${files}\n...`, "proc-zip-extract");
@@ -829,7 +829,6 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         });
         this.addSettingTab(new DiffZipSettingTab(this.app, this));
     }
-
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     }
@@ -841,7 +840,7 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         if (
             await this.backups.writeTOC(
                 tocFilePath,
-                new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`)
+                toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))
             )
         ) {
             this.logMessage(`Backup information has been reset`);

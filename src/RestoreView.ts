@@ -9,7 +9,7 @@ import {
 } from "obsidian";
 import { mount, unmount } from "svelte";
 import RestoreFilesComponent from "./RestoreFiles.svelte";
-import type DiffZipBackupPlugin from "./main";
+import type DiffZipBackupPlugin from "../main.ts";
 import { writable } from "svelte/store";
 
 export const VIEW_TYPE_RESTORE = "diffzip-view-restore";
