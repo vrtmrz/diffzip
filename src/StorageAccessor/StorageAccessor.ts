@@ -40,8 +40,8 @@ export abstract class StorageAccessor {
         return (await this.checkType(path)) != FileType.Missing;
     }
 
-    async readBinary(path: string): Promise<ArrayBuffer | false> {
-        const encryptedData = await this._readBinary(path);
+    async readBinary(path: string, preventUseCache = false): Promise<ArrayBuffer | false> {
+        const encryptedData = await this._readBinary(path, preventUseCache);
         if (encryptedData === false) return false;
         if (!this.isLocal && this.settings.passphraseOfZip) {
             return toArrayBuffer(await decryptCompatOpenSSL(new Uint8Array(encryptedData), this.settings.passphraseOfZip, 10000) as Uint8Array<ArrayBuffer>);
@@ -50,7 +50,7 @@ export abstract class StorageAccessor {
     }
 
     async readTOC(path: string): Promise<ArrayBuffer | false> {
-        if (this.type != "normal") return await this.readBinary(path);
+        if (this.type != "normal") return await this.readBinary(path, true);
         return await this._readBinary(path, true);
     }
 

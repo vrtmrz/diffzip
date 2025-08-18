@@ -70,7 +70,7 @@ export class S3Bucket extends StorageAccessor {
         const result = await client.getObject({
             Bucket: this.settings.bucket,
             Key: fullPath,
-            IfNoneMatch: preventCache ? "*" : undefined,
+            ResponseCacheControl: preventCache ? "no-cache" : undefined
         });
         if (!result.Body) return false;
         const resultByteArray = await result.Body.transformToByteArray() as Uint8Array<ArrayBuffer>;
