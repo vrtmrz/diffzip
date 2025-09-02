@@ -13,6 +13,7 @@ export interface DiffZipBackupSettings {
     restoreFolder: string;
     maxSize: number;
     maxFilesInZip: number;
+    maxTotalSizeInZip: number;
     performNextBackupOnMaxFiles: boolean;
     startBackupAtLaunch: boolean;
     startBackupAtLaunchType: AutoBackupType;
@@ -39,6 +40,7 @@ export const DEFAULT_SETTINGS: DiffZipBackupSettings = {
     restoreFolder: "restored",
     includeHiddenFolder: false,
     maxSize: 30,
+    maxTotalSizeInZip: 30,
     desktopFolderEnabled: false,
     bucketEnabled: false,
     endPoint: "",

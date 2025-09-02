@@ -240,6 +240,18 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     })
             );
         new Setting(containerEl)
+            .setName("Max total source size in a single ZIP in MB")
+            .setDesc("(0 to disabled) Limit the total size of files in a single ZIP file to better restore performance")
+            .addText((text) =>
+                text
+                    .setPlaceholder("30")
+                    .setValue(this.plugin.settings.maxTotalSizeInZip + "")
+                    .onChange(async (value) => {
+                        this.plugin.settings.maxTotalSizeInZip = Number.parseInt(value);
+                        await this.plugin.saveSettings();
+                    })
+            );
+        new Setting(containerEl)
             .setName("Perform all files over the max files")
             .setDesc(
                 "Automatically process the remaining files, even if the number of files to be processed exceeds Max files."

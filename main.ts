@@ -210,6 +210,8 @@ export default class DiffZipBackupPlugin extends Plugin {
             )
             .filter((e) => skippableFiles.indexOf(e) == -1);
         let processed = 0;
+        let processedSize = 0;
+        let hasExtra = false;
         const processedFiles = [] as string[];
         let zipped = 0;
         for (const path of normalFiles) {
@@ -254,6 +256,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 }
             }
             zipped++;
+            processedSize += content.byteLength;
 
             // Update the file information
             toc[path] = {
@@ -282,18 +285,27 @@ export default class DiffZipBackupPlugin extends Plugin {
             if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip) {
                 this.logMessage(
                     `Max files in a single ZIP has been reached. The rest of the files will be archived in the next process`,
-                    key
+                    "result" + key
                 );
+                hasExtra = true;
+                break;
+            }
+            if (this.settings.maxTotalSizeInZip > 0 && processedSize >= this.settings.maxTotalSizeInZip * 1024 * 1024) {
+                this.logMessage(
+                    `Max total size in a single ZIP has been reached (${processedSize} of ${this.settings.maxTotalSizeInZip * 1024 * 1024}). The rest of the files will be archived in the next process`,
+                    "result" + key
+                );
+                hasExtra = true;
                 break;
             }
         }
         this.logMessage(
-            `All ${processed} files have been scanned, ${zipped} files are now compressing. please wait for a while`,
+            `${processed} of ${normalFiles.length} files have been scanned, ${zipped} files are now compressing. please wait for a while`,
             key
         );
         if (zipped == 0 && missingFiles == 0) {
             this.logMessage(
-                `All ${processed} files have been scanned, but nothing has been changed!\nGenerating ZIP has been skipped.`,
+                `${processed} of ${normalFiles.length} files have been scanned, and nothing has been changed!\nGenerating ZIP has been skipped.`,
                 key
             );
             return;
@@ -335,16 +347,15 @@ export default class DiffZipBackupPlugin extends Plugin {
                 throw new Error(`Updating TOC has been failed!`);
             }
             log(`Backup information has been updated`, key);
-            if (
-                this.settings.maxFilesInZip > 0 &&
-                zipped >= this.settings.maxFilesInZip &&
-                this.settings.performNextBackupOnMaxFiles
-            ) {
+            if (hasExtra && this.settings.performNextBackupOnMaxFiles) {
                 setTimeout(() => {
                     this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
                 }, 10);
             } else {
-                this.logMessage(`${processed} of ${normalFiles.length} files have been processed, ${zipped} files have been zipped.`, key);
+                this.logMessage(
+                    `${processed} of ${normalFiles.length} files have been processed, ${zipped} files have been zipped.`,
+                    key
+                );
             }
             // } else {
             // 	this.logMessage(`Backup has been aborted \n${processed} files, ${zipped} zip files`, "proc-zip-process");
