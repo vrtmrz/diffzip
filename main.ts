@@ -1,6 +1,11 @@
 import { Notice, Plugin, parseYaml, stringifyYaml } from "obsidian";
 import * as fflate from "fflate";
-import { getStorageForBackup, getStorageForVault, getStorageInstance, getStorageTypeForBackupAccess, getStorageTypeForVaultAccess, StorageAccessorTypes, } from "./src/storage.ts";
+import {
+    getStorageForBackup,
+    getStorageForVault,
+    getStorageTypeForBackupAccess,
+    getStorageTypeForVaultAccess,
+} from "./src/storage.ts";
 import { type StorageAccessor } from "./src/StorageAccessor/StorageAccessor.ts";
 import { RestoreDialog } from "./src/RestoreView.ts";
 import { confirmWithMessage, askSelectString } from "./src/dialog.ts";
@@ -83,6 +88,15 @@ export default class DiffZipBackupPlugin extends Plugin {
         }, 5000);
         this.messages[key] = n;
     }
+
+    hideMessage(key: string) {
+        const n = this.messages[key];
+        if (n) {
+            clearTimeout(n.timer);
+            n.notice.hide();
+            delete this.messages[key];
+        }
+    }
     logWrite(message: string, key?: string) {
         const dt = new Date().toLocaleString();
         console.log(`${dt}\t${message}`);
@@ -149,6 +163,7 @@ export default class DiffZipBackupPlugin extends Plugin {
     }
 
     async createZip(verbosity: boolean, skippableFiles: string[] = [], onlyNew = false, skipDeleted: boolean = false) {
+        const key = "proc-zip-process-" + Date.now();
         const log = verbosity
             ? (msg: string, key?: string) => this.logWrite(msg, key)
             : (msg: string, key?: string) => this.logMessage(msg, key);
@@ -203,7 +218,7 @@ export default class DiffZipBackupPlugin extends Plugin {
             if (processed % 10 == 0)
                 this.logMessage(
                     `Backup processing ${processed}/${normalFiles.length}  ${verbosity ? `\n${path}` : ""}`,
-                    "proc-zip-process"
+                    key
                 );
             // Retrieve the file information
             const stat = await this.vaultAccess.stat(path);
@@ -256,22 +271,31 @@ export default class DiffZipBackupPlugin extends Plugin {
                     },
                 ],
             };
-            this.logMessage(`Archiving: ${path} ${zipped}/${normalFiles.length}`, "proc-zip-archive");
-            zip.addFile(f, path, { mtime: stat.mtime });
+            this.logMessage(`Archiving: ${path} ${zipped}/${normalFiles.length}`, key);
+            zip.addFile(f, path, { mtime: stat.mtime }, (processed, total, finished) => {
+                if (!finished) {
+                    this.logMessage(`Archiving: ${path} ${processed}/${total}`, key + path);
+                } else {
+                    this.hideMessage(key + path);
+                }
+            });
             if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip) {
                 this.logMessage(
                     `Max files in a single ZIP has been reached. The rest of the files will be archived in the next process`,
-                    "finish"
+                    key
                 );
                 break;
             }
         }
         this.logMessage(
             `All ${processed} files have been scanned, ${zipped} files are now compressing. please wait for a while`,
-            "proc-zip-process"
+            key
         );
         if (zipped == 0 && missingFiles == 0) {
-            this.logMessage(`Nothing has been changed! Generating ZIP has been skipped.`);
+            this.logMessage(
+                `All ${processed} files have been scanned, but nothing has been changed!\nGenerating ZIP has been skipped.`,
+                key
+            );
             return;
         }
         const tocTimeStamp = new Date().getTime();
@@ -292,12 +316,11 @@ export default class DiffZipBackupPlugin extends Plugin {
                     `${this.backupFolder}${this.sep}${newFileName}${pieceCount == 0 ? "" : "." + `00${pieceCount}`.slice(-3)}`
                 );
                 pieceCount++;
-                this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
+                this.logMessage(`Creating ${outZipFile}...`, `write-${key}`);
                 const e = await this.backups.writeBinary(outZipFile, toArrayBuffer(chunk));
                 if (!e) {
                     throw new Error(`Creating ${outZipFile} has been failed!`);
                 }
-                this.logMessage(`Creating ${outZipFile}...`, `proc-zip-process-write-${pieceCount}`);
             }
 
             const tocFilePath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
@@ -306,12 +329,12 @@ export default class DiffZipBackupPlugin extends Plugin {
             if (
                 !(await this.backups.writeTOC(
                     tocFilePath,
-                    toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`)))
-                )
+                    toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`))
+                ))
             ) {
                 throw new Error(`Updating TOC has been failed!`);
             }
-            log(`Backup information has been updated`);
+            log(`Backup information has been updated`, key);
             if (
                 this.settings.maxFilesInZip > 0 &&
                 zipped >= this.settings.maxFilesInZip &&
@@ -321,19 +344,13 @@ export default class DiffZipBackupPlugin extends Plugin {
                     this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
                 }, 10);
             } else {
-                this.logMessage(
-                    `All ${processed} files have been processed, ${zipped} files have been zipped.`,
-                    "proc-zip-process"
-                );
+                this.logMessage(`All ${processed} files have been processed, ${zipped} files have been zipped.`, key);
             }
             // } else {
             // 	this.logMessage(`Backup has been aborted \n${processed} files, ${zipped} zip files`, "proc-zip-process");
             // }
         } catch (e) {
-            this.logMessage(
-                `Something get wrong while processing ${processed} files, ${zipped} zip files`,
-                "proc-zip-process"
-            );
+            this.logMessage(`Something get wrong while processing ${processed} files, ${zipped} zip files`, key);
             this.logWrite(e);
         }
     }
@@ -440,10 +457,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -604,10 +621,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -722,9 +739,9 @@ export default class DiffZipBackupPlugin extends Plugin {
         const detailFiles = `<details>
 
 ${[...zipFileMap.entries()]
-                .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
-                .sort((a, b) => a.localeCompare(b))
-                .join("")}
+    .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
+    .sort((a, b) => a.localeCompare(b))
+    .join("")}
 
 
 </details>`;

@@ -8,7 +8,7 @@ import { NormalVault } from "./StorageAccessor/NormalVault.ts";
 import { DirectVault } from "./StorageAccessor/DirectVault.ts";
 import { ExternalVaultFilesystem } from "./StorageAccessor/ExternalVaultFilesystem.ts";
 import { S3Bucket } from "./StorageAccessor/S3Bucket.ts";
-import { StorageAccessor } from "./StorageAccessor/StorageAccessor.ts";
+import type { StorageAccessor } from "./StorageAccessor/StorageAccessor.ts";
 export const decryptCompatOpenSSL = OpenSSLCompat.CBC.decryptCBC;
 export const encryptCompatOpenSSL = OpenSSLCompat.CBC.encryptCBC;
 

@@ -1,5 +1,5 @@
 import * as fflate from "fflate";
-import { promiseWithResolver } from "octagonal-wheels/promises";
+import { delay, promiseWithResolver } from "octagonal-wheels/promises";
 import type { XByteArray } from "./types.ts";
 
 /**
@@ -68,15 +68,32 @@ export class Archiver {
         this.addFile(binary, path, options);
     }
 
-    addFile(file: XByteArray, path: string, options?: { mtime?: number }): void {
+    addFileTask = Promise.resolve();
+    addFile(file: XByteArray, path: string, options?: { mtime?: number }, progress?: (processed: number, total: number, finished: boolean) => void): void {
         const fflateFile = new fflate.ZipDeflate(path, { level: 9 });
         fflateFile.mtime = options?.mtime ?? Date.now();
-        this._processedLength += file.length;
+        const total = file.byteLength;
+        let processed = 0;
         this.progressReport("add");
         this._zipFile.add(fflateFile);
-
-        // TODO: Check if the large file can be added in a single chunks
-        fflateFile.push(file, true);
+        const MAX_CHUNK_SIZE = 1024 * 1024; // 1MB
+        const MIN_CHUNK_SIZE = 64 * 1024; // 64KB
+        const div10 = Math.ceil(file.length / 10);
+        const chunkSize = Math.max(Math.min(MAX_CHUNK_SIZE, div10), MIN_CHUNK_SIZE);
+        this.addFileTask = this.addFileTask.then(async () => {
+            for (let i = 0; i < file.length; i += chunkSize) {
+                const chunk = file.slice(i, i + chunkSize);
+                processed += chunk.byteLength;
+                fflateFile.push(chunk, false);
+                if (chunkSize > MIN_CHUNK_SIZE) {
+                    progress?.(processed, total, false);
+                }
+                await new Promise(res => setTimeout(res, 1));
+            }
+            fflateFile.push(new Uint8Array(), true);
+            progress?.(processed, total, true);
+            return Promise.resolve();
+        });
     }
 
     finalize() {
