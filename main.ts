@@ -344,7 +344,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                     this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
                 }, 10);
             } else {
-                this.logMessage(`All ${processed} files have been processed, ${zipped} files have been zipped.`, key);
+                this.logMessage(`${processed} of ${normalFiles.length} files have been processed, ${zipped} files have been zipped.`, key);
             }
             // } else {
             // 	this.logMessage(`Backup has been aborted \n${processed} files, ${zipped} zip files`, "proc-zip-process");
