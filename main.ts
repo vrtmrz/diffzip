@@ -21,6 +21,8 @@ import {
     type NoticeWithTimer,
 } from "./src/types.ts";
 import { DiffZipSettingTab } from "./src/DiffZipSettingTab.ts";
+import { ProgressFragment } from "./src/ProgressFragment.ts";
+import { CombinedFragment } from "./src/CombinedFragment.ts";
 
 export default class DiffZipBackupPlugin extends Plugin {
     settings: DiffZipBackupSettings;
@@ -102,17 +104,22 @@ export default class DiffZipBackupPlugin extends Plugin {
         console.log(`${dt}\t${message}`);
     }
 
-    async getFiles(path: string, ignoreList: string[]) {
+    async getFiles(path: string, ignoreList: string[], progress: ProgressFragment) {
+        const pathPart = ellipsisMiddle(path);
+        progress.note = `Scanning ${pathPart}`;
         const w = await this.app.vault.adapter.list(path);
+        progress.total += w.folders.length;
         let files = [...w.files.filter((e) => !ignoreList.some((ee) => e.endsWith(ee)))];
         L1: for (const v of w.folders) {
             for (const ignore of ignoreList) {
                 if (v.endsWith(ignore)) {
+                    progress.value++;
                     continue L1;
                 }
             }
             // files = files.concat([v]);
-            files = files.concat(await this.getFiles(v, ignoreList));
+            files = files.concat(await this.getFiles(v, ignoreList, progress));
+            progress.value++;
         }
         return files;
     }
@@ -157,7 +164,18 @@ export default class DiffZipBackupPlugin extends Plugin {
             this.app.vault.configDir + "/workspace-mobile.json",
         ];
         if (this.settings.includeHiddenFolder) {
-            return (await this.getFiles("", ignores)).filter((e) => !e.startsWith(".trash/"));
+            const progress = new ProgressFragment({
+                title: "Gathering Files",
+                value: 0,
+                total: 0,
+                onComplete: () => {
+                    setTimeout(() => {
+                        notice.hide();
+                    }, 1000);
+                },
+            });
+            const notice = new Notice(progress.fragment, 0);
+            return (await this.getFiles("", ignores, progress)).filter((e) => !e.startsWith(".trash/"));
         }
         return this.app.vault.getFiles().map((e) => e.path);
     }
@@ -167,7 +185,6 @@ export default class DiffZipBackupPlugin extends Plugin {
         const log = verbosity
             ? (msg: string, key?: string) => this.logWrite(msg, key)
             : (msg: string, key?: string) => this.logMessage(msg, key);
-
         const allFiles = await this.getAllFiles();
         const toc = await this.loadTOC();
         const today = new Date();
@@ -177,27 +194,94 @@ export default class DiffZipBackupPlugin extends Plugin {
 
         // Find missing files
         let missingFiles = 0;
+        let progressNotice: Notice | undefined;
+        let onProgress = () => {};
+        const fragmentOption = {
+            total: 0,
+            onComplete: () => onCloseProgress(),
+            onProgress: () => onProgress(),
+        } as const;
+
+        const missingFileProgress = new ProgressFragment({
+            title: "Checking file and TOC",
+            ...fragmentOption,
+        });
+        const checkingProgress = new ProgressFragment({
+            title: "Check and Archiving Files",
+            ...fragmentOption,
+        });
+        const fileProcessingProgress = new ProgressFragment({
+            title: "File Processing",
+            ...fragmentOption,
+        });
+        const fileArchivedProgress = new ProgressFragment({
+            title: "Archiving Files",
+            ...fragmentOption,
+        });
+        const uploadingProgress = new ProgressFragment({
+            title: "Committing ZIP Files",
+            ...fragmentOption,
+        });
+        const combinedFragment = new CombinedFragment([
+            () => missingFileProgress.reconstructFragment(),
+            () => checkingProgress.reconstructFragment(),
+            () => fileProcessingProgress.reconstructFragment(),
+            () => fileArchivedProgress.reconstructFragment(),
+            () => uploadingProgress.reconstructFragment(),
+        ]);
+
+        const isClosed = () => {
+            return progressNotice == undefined || !progressNotice.noticeEl.isShown();
+        };
+
+        onProgress = () => {
+            if (!isClosed()) return;
+            progressNotice = new Notice(combinedFragment.rebuildFragment(), 0);
+        };
+
+        const onCloseProgress = () => {
+            if (
+                [
+                    missingFileProgress,
+                    checkingProgress,
+                    fileProcessingProgress,
+                    fileArchivedProgress,
+                    uploadingProgress,
+                ].every((e) => e.isCompleted || e.isCancelled)
+            ) {
+                setTimeout(() => {
+                    progressNotice?.hide();
+                    progressNotice = undefined;
+                }, 3000);
+            }
+        };
+
+        missingFileProgress.total = Object.keys(toc).length;
         for (const [filename, fileInfo] of Object.entries(toc)) {
-            if (fileInfo.missing) continue;
-            if (!(await this.vaultAccess.isFileExists(this.vaultAccess.normalizePath(filename)))) {
-                if (skipDeleted) continue;
-                fileInfo.missing = true;
-                fileInfo.digest = "";
-                fileInfo.mtime = today.getTime();
-                fileInfo.processed = today.getTime();
-                log(`File ${filename} is missing`);
-                fileInfo.history = [
-                    ...fileInfo.history,
-                    {
-                        zipName: newFileName,
-                        modified: today.toISOString(),
-                        missing: true,
-                        processed: today.getTime(),
-                        digest: "",
-                    },
-                ];
-                log(`History of ${filename} has been updated (Missing)`);
-                missingFiles++;
+            try {
+                if (fileInfo.missing) continue;
+                if (!(await this.vaultAccess.isFileExists(this.vaultAccess.normalizePath(filename)))) {
+                    if (skipDeleted) continue;
+                    fileInfo.missing = true;
+                    fileInfo.digest = "";
+                    fileInfo.mtime = today.getTime();
+                    fileInfo.processed = today.getTime();
+                    log(`File ${filename} is missing`);
+                    fileInfo.history = [
+                        ...fileInfo.history,
+                        {
+                            zipName: newFileName,
+                            modified: today.toISOString(),
+                            missing: true,
+                            processed: today.getTime(),
+                            digest: "",
+                        },
+                    ];
+                    log(`History of ${filename} has been updated (Missing)`);
+                    missingFiles++;
+                }
+            } finally {
+                missingFileProgress.value++;
             }
         }
 
@@ -209,111 +293,120 @@ export default class DiffZipBackupPlugin extends Plugin {
                     !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
             )
             .filter((e) => skippableFiles.indexOf(e) == -1);
+        checkingProgress.total = normalFiles.length;
         let processed = 0;
         let processedSize = 0;
         let hasExtra = false;
         const processedFiles = [] as string[];
         let zipped = 0;
         for (const path of normalFiles) {
-            processedFiles.push(path);
-            processed++;
-            if (processed % 10 == 0)
-                this.logMessage(
-                    `Backup processing ${processed}/${normalFiles.length}  ${verbosity ? `\n${path}` : ""}`,
-                    key
-                );
-            // Retrieve the file information
-            const stat = await this.vaultAccess.stat(path);
-            if (!stat) {
-                this.logMessage(`Archiving: Could not read stat ${path}`);
-                continue;
-            }
-            // Check the file is in the skippable list
-            if (onlyNew && path in toc) {
-                const entry = toc[path];
-                const mtime = new Date(stat.mtime).getTime();
-                if (mtime <= entry.mtime) {
-                    this.logWrite(`${path} older than the last backup, skipping`);
+            try {
+                processedFiles.push(path);
+                processed++;
+                checkingProgress.note = `Processing ${ellipsisMiddle(path)}`;
+                const stat = await this.vaultAccess.stat(path);
+                if (!stat) {
+                    this.logMessage(`Archiving: Could not read stat ${path}`);
                     continue;
                 }
-            }
-            // Read the file content
-            const content = await this.vaultAccess.readBinary(path);
-            if (!content) {
-                this.logMessage(`Archiving: Could not read ${path}`);
-                continue;
-            }
-
-            // Check the file actually modified.
-            const f = new Uint8Array(content);
-            const digest = await computeDigest(f);
-
-            if (path in toc) {
-                const entry = toc[path];
-                if (entry.digest == digest) {
-                    this.logWrite(`${path} Not changed`);
+                // Check the file is in the skippable list
+                if (onlyNew && path in toc) {
+                    const entry = toc[path];
+                    const mtime = new Date(stat.mtime).getTime();
+                    if (mtime <= entry.mtime) {
+                        this.logWrite(`${path} older than the last backup, skipping`);
+                        continue;
+                    }
+                }
+                // Read the file content
+                const content = await this.vaultAccess.readBinary(path);
+                if (!content) {
+                    this.logMessage(`Archiving: Could not read ${path}`);
                     continue;
                 }
-            }
-            zipped++;
-            processedSize += content.byteLength;
 
-            // Update the file information
-            toc[path] = {
-                digest,
-                filename: path,
-                mtime: stat.mtime,
-                processed: today.getTime(),
-                history: [
-                    ...(toc[path]?.history ?? []),
-                    {
-                        zipName: newFileName,
-                        modified: new Date(stat.mtime).toISOString(),
-                        processed: today.getTime(),
-                        digest,
-                    },
-                ],
-            };
-            this.logMessage(`Archiving: ${path} ${zipped}/${normalFiles.length}`, key);
-            zip.addFile(f, path, { mtime: stat.mtime }, (processed, total, finished) => {
-                if (!finished) {
-                    this.logMessage(`Archiving: ${path} ${processed}/${total}`, key + path);
-                } else {
-                    this.hideMessage(key + path);
+                // Check the file actually modified.
+                const f = new Uint8Array(content);
+                const digest = await computeDigest(f);
+
+                if (path in toc) {
+                    const entry = toc[path];
+                    if (entry.digest == digest) {
+                        this.logWrite(`${path} Not changed`);
+                        continue;
+                    }
                 }
-            });
-            if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip) {
-                this.logMessage(
-                    `Max files in a single ZIP has been reached. The rest of the files will be archived in the next process`,
-                    "result" + key
-                );
-                hasExtra = true;
-                break;
-            }
-            if (this.settings.maxTotalSizeInZip > 0 && processedSize >= this.settings.maxTotalSizeInZip * 1024 * 1024) {
-                this.logMessage(
-                    `Max total size in a single ZIP has been reached (${processedSize} of ${this.settings.maxTotalSizeInZip * 1024 * 1024}). The rest of the files will be archived in the next process`,
-                    "result" + key
-                );
-                hasExtra = true;
-                break;
+                zipped++;
+                processedSize += content.byteLength;
+
+                // Update the file information
+                toc[path] = {
+                    digest,
+                    filename: path,
+                    mtime: stat.mtime,
+                    processed: today.getTime(),
+                    history: [
+                        ...(toc[path]?.history ?? []),
+                        {
+                            zipName: newFileName,
+                            modified: new Date(stat.mtime).toISOString(),
+                            processed: today.getTime(),
+                            digest,
+                        },
+                    ],
+                };
+                fileArchivedProgress.total++;
+                fileArchivedProgress.note = `Archiving: ${ellipsisMiddle(path)}`;
+                zip.addFile(f, path, { mtime: stat.mtime }, (processed, total, finished) => {
+                    if (!finished) {
+                        fileProcessingProgress.note = `Archiving: ${ellipsisMiddle(path)}`;
+                        fileProcessingProgress.total = total;
+                        fileProcessingProgress.value = processed;
+                    } else {
+                        fileArchivedProgress.value++;
+                        fileArchivedProgress.note = `Archived: ${ellipsisMiddle(path)}`;
+                        fileProcessingProgress.note = "";
+                        fileProcessingProgress.isCancelled = true;
+                        fileProcessingProgress.total = 0;
+                        fileProcessingProgress.value = 0;
+                    }
+                });
+                if (this.settings.maxFilesInZip > 0 && zipped >= this.settings.maxFilesInZip) {
+                    checkingProgress.total = zipped;
+                    checkingProgress.note = `⚠️ Max files in a single ZIP`;
+                    hasExtra = true;
+                    break;
+                }
+                if (
+                    this.settings.maxTotalSizeInZip > 0 &&
+                    processedSize >= this.settings.maxTotalSizeInZip * 1024 * 1024
+                ) {
+                    checkingProgress.total = zipped;
+                    checkingProgress.note = `⚠️ Max total size in a single ZIP`;
+                    hasExtra = true;
+                    break;
+                }
+            } finally {
+                checkingProgress.value++;
             }
         }
-        this.logMessage(
-            `${processed} of ${normalFiles.length} files have been scanned, ${zipped} files are now compressing. please wait for a while`,
-            key
-        );
+        if (!hasExtra) {
+            checkingProgress.note = ``;
+        }
+
         if (zipped == 0 && missingFiles == 0) {
-            this.logMessage(
-                `${processed} of ${normalFiles.length} files have been scanned, and nothing has been changed!\nGenerating ZIP has been skipped.`,
-                key
-            );
+            fileProcessingProgress.isCancelled = true;
+            checkingProgress.isCancelled = true;
+            fileArchivedProgress.isCancelled = true;
+            uploadingProgress.note = `No files have been changed. \nSkipping ZIP generation...`;
+            uploadingProgress.isCancelled = true;
             return;
         }
         const tocTimeStamp = new Date().getTime();
         zip.addTextFile(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`, InfoFile, { mtime: tocTimeStamp });
         try {
             const buf = await zip.finalize();
+            uploadingProgress.total = buf.byteLength;
             // Writing a large file can cause the crash of Obsidian, and very heavy to synchronise.
             // Hence, we have to split the file into a smaller size.
             const step =
@@ -322,17 +415,19 @@ export default class DiffZipBackupPlugin extends Plugin {
             // If the file size is smaller than the step, it will be a single file.
             // Otherwise, it will be split into multiple files. (start from 001)
             if (buf.byteLength > step) pieceCount = 1;
+
             const chunks = pieces(buf, step);
             for (const chunk of chunks) {
                 const outZipFile = this.backups.normalizePath(
                     `${this.backupFolder}${this.sep}${newFileName}${pieceCount == 0 ? "" : "." + `00${pieceCount}`.slice(-3)}`
                 );
                 pieceCount++;
-                this.logMessage(`Creating ${outZipFile}...`, `write-${key}`);
+                uploadingProgress.note = `Committing ${ellipsisMiddle(outZipFile)}`;
                 const e = await this.backups.writeBinary(outZipFile, toArrayBuffer(chunk));
                 if (!e) {
                     throw new Error(`Creating ${outZipFile} has been failed!`);
                 }
+                uploadingProgress.value += chunk.byteLength;
             }
 
             const tocFilePath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
@@ -348,6 +443,7 @@ export default class DiffZipBackupPlugin extends Plugin {
             }
             log(`Backup information has been updated`, key);
             if (hasExtra && this.settings.performNextBackupOnMaxFiles) {
+                checkingProgress.isCancelled = true;
                 setTimeout(() => {
                     this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
                 }, 10);
@@ -857,6 +953,7 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         });
         this.addSettingTab(new DiffZipSettingTab(this.app, this));
     }
+
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     }
@@ -880,4 +977,15 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
     async saveSettings() {
         await this.saveData(this.settings);
     }
+}
+
+function ellipsisMiddle(text: string, maxLength: number = 60) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+    const ellipsis = "...";
+    const charsToShow = maxLength - ellipsis.length;
+    const start = Math.ceil(charsToShow / 2);
+    const end = text.length - Math.floor(charsToShow / 2);
+    return text.slice(0, start) + ellipsis + text.slice(end);
 }
