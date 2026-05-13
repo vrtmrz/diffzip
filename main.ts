@@ -5,9 +5,11 @@ import {
     getStorageForVault,
     getStorageTypeForBackupAccess,
     getStorageTypeForVaultAccess,
+    StorageAccessorTypes,
 } from "./src/storage.ts";
 import { type StorageAccessor } from "./src/StorageAccessor/StorageAccessor.ts";
 import { RestoreDialog } from "./src/RestoreView.ts";
+import { SyncRemoteDialog } from "./src/SyncRemoteDialog.ts";
 import { confirmWithMessage, askSelectString } from "./src/dialog.ts";
 import { Archiver, Extractor } from "./src/Archive.ts";
 import { computeDigest, pieces, toArrayBuffer } from "./src/util.ts";
@@ -25,7 +27,7 @@ import { ProgressFragment } from "./src/ProgressFragment.ts";
 import { CombinedFragment } from "./src/CombinedFragment.ts";
 
 export default class DiffZipBackupPlugin extends Plugin {
-    settings: DiffZipBackupSettings;
+    settings!: DiffZipBackupSettings;
 
     get isMobile(): boolean {
         // @ts-ignore
@@ -40,7 +42,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         return this.isDesktopMode ? this.settings.BackupFolderDesktop : this.settings.backupFolderMobile;
     }
 
-    _backups: StorageAccessor;
+    _backups!: StorageAccessor;
     get backups(): StorageAccessor {
         const type = getStorageTypeForBackupAccess(this);
         if (!this._backups || this._backups.type != type) {
@@ -48,7 +50,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         }
         return this._backups;
     }
-    _vaultAccess: StorageAccessor;
+    _vaultAccess!: StorageAccessor;
     get vaultAccess(): StorageAccessor {
         const type = getStorageTypeForVaultAccess(this);
         if (!this._vaultAccess || this._vaultAccess.type != type) {
@@ -458,7 +460,7 @@ export default class DiffZipBackupPlugin extends Plugin {
             // }
         } catch (e) {
             this.logMessage(`Something get wrong while processing ${processed} files, ${zipped} zip files`, key);
-            this.logWrite(e);
+            this.logWrite(e instanceof Error ? e.message : String(e), key);
         }
     }
 
@@ -949,6 +951,24 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
             name: "⚠ Restore Vault from backups and delete with deletion",
             callback: async () => {
                 await this.restoreVault(false, true);
+            },
+        });
+        this.addCommand({
+            id: "diffzip-check-and-mirror-remote",
+            name: "Selective Apply Remote Backup (Check and Mirror)",
+            callback: async () => {
+                const storageType = getStorageTypeForBackupAccess(this);
+                if (
+                    storageType !== StorageAccessorTypes.S3 &&
+                    storageType !== StorageAccessorTypes.EXTERNAL
+                ) {
+                    new Notice(
+                        "Remote storage is not configured. Please enable S3 or Desktop external folder in settings."
+                    );
+                    return;
+                }
+                const d = new SyncRemoteDialog(this.app, this);
+                d.open();
             },
         });
         this.addSettingTab(new DiffZipSettingTab(this.app, this));

@@ -8,7 +8,7 @@ We can store all the files which have been modified, into a ZIP file.
 
 ## Installation
 
-1. Install this plug-in from [Beta Reviewers Auto-update Tester](https://github.com/TfTHacker/obsidian42-brat).
+1. Install this plug-in from [Community Plugins](https://obsidian.md/plugins).
 
 ## How to use
 
@@ -23,6 +23,11 @@ We can store all the files which have been modified, into a ZIP file.
 3. Select the backup you want to restore.
 4. Select the place to save the restored file.
 5. We got an old file.
+
+### Selective Apply a file (Lightweight Synchronisation)
+1. Perform `Selective Apply Remote Backup (Check and Mirror)` from the command palette.
+2. Select the file you want to apply.
+3. Perform `Apply` to apply the differences.
 
 ## Settings
 

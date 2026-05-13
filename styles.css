@@ -20,3 +20,105 @@
 	flex-shrink: 0;
 	flex-direction: column;
 }
+
+/* ── Selective Apply dialog ─────────────────────────── */
+.diffzip-sync-dialog {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75em;
+}
+
+.diffzip-sync-table-wrap {
+	overflow-y: auto;
+	max-height: 50vh;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+}
+
+.diffzip-sync-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.9em;
+}
+
+.diffzip-sync-table thead {
+	position: sticky;
+	top: 0;
+	background-color: var(--background-secondary);
+	z-index: 1;
+}
+
+.diffzip-sync-table th,
+.diffzip-sync-table td {
+	padding: 4px 8px;
+	text-align: left;
+	border-bottom: 1px solid var(--background-modifier-border);
+	vertical-align: middle;
+}
+
+.diffzip-sync-table .col-check {
+	width: 2em;
+	text-align: center;
+}
+
+.diffzip-sync-table .col-op {
+	width: 8em;
+}
+
+.diffzip-sync-table .col-zip {
+	width: 16em;
+	font-size: 0.85em;
+	color: var(--text-muted);
+}
+
+.diffzip-sync-table .col-mod {
+	width: 12em;
+	font-size: 0.85em;
+	color: var(--text-muted);
+}
+
+.diffzip-sync-table .col-path {
+	word-break: break-all;
+}
+
+.op-same-row td {
+	opacity: 0.45;
+}
+
+.op-badge {
+	display: inline-block;
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.op-add    { background-color: var(--color-green);  color: var(--text-on-accent); }
+.op-update { background-color: var(--color-blue);   color: var(--text-on-accent); }
+.op-revert { background-color: var(--color-orange); color: var(--text-on-accent); }
+.op-conflict { background-color: var(--color-red);  color: var(--text-on-accent); }
+.op-delete { background-color: var(--color-red);    color: var(--text-on-accent); }
+.op-extra  { background-color: var(--text-muted);   color: var(--background-primary); }
+.op-same   { background-color: var(--background-modifier-border); color: var(--text-muted); }
+
+.diffzip-sync-controls {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	font-size: 0.9em;
+}
+
+.diffzip-sync-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+
+.diffzip-sync-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5em;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 0.75em;
+}

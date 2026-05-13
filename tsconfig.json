@@ -4,7 +4,7 @@
         "inlineSourceMap": true,
         "inlineSources": true,
         "module": "ESNext",
-        "target": "ES6",
+        "target": "es2017",
         "allowJs": true,
         "noImplicitAny": true,
         "moduleResolution": "bundler",
@@ -14,7 +14,7 @@
         "verbatimModuleSyntax": true,
         "allowImportingTsExtensions": true,
         "noEmit": true,
-        "lib": ["DOM", "ES5", "ES6", "ES7"]
+        "lib": ["DOM", "ES2017"]
     },
     "include": ["**/*.ts"]
 }
