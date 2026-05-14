@@ -131,6 +131,91 @@ export type TocUpdate =
           modifiedTime: number;
       };
 
+export type SyncItem = {
+    filename: string;
+    operation: SyncOperation;
+    zipName: string;
+    modified: string;
+    action: SyncAction;
+    allowedActions: SyncAction[];
+    defaultAction: SyncAction;
+};
+
+export type BuildSyncItemsOptions = {
+    destructiveDefaultsEnabled: boolean;
+    pluginDir?: string;
+    ignoreHidden?: boolean;
+    ignorePatterns?: string[];
+};
+
+export function buildSyncItems(
+    remoteToc: TocMap,
+    localFileMap: Map<string, { digest: string; mtime: number }>,
+    options: BuildSyncItemsOptions,
+): SyncItem[] {
+    const { destructiveDefaultsEnabled, pluginDir, ignoreHidden = false, ignorePatterns = [] } = options;
+
+    const shouldIgnore = (filename: string): boolean => {
+        if (pluginDir && filename.startsWith(pluginDir)) return true;
+        if (!ignoreHidden) return false;
+        for (const pattern of ignorePatterns) {
+            if (filename === pattern || filename.startsWith(pattern + "/")) return true;
+        }
+        if (filename.split("/").some((part) => part.startsWith("."))) return true;
+        return false;
+    };
+
+    const items: SyncItem[] = [];
+
+    for (const [filename, fileInfo] of Object.entries(remoteToc)) {
+        if (shouldIgnore(filename)) continue;
+
+        const history = [...fileInfo.history].sort(
+            (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime(),
+        );
+        if (history.length === 0) continue;
+        const latest = history[0];
+        const isRemoteMissing = fileInfo.missing === true;
+        const localInfo = localFileMap.get(filename);
+
+        let operation: SyncOperation | undefined;
+
+        if (isRemoteMissing) {
+            if (localInfo) operation = "Delete";
+        } else if (!localInfo) {
+            operation = "Add";
+        } else if (latest.digest === localInfo.digest) {
+            operation = "Same";
+        } else {
+            const remoteMtime = new Date(latest.modified).getTime();
+            if (remoteMtime > localInfo.mtime) operation = "Updated";
+            else if (remoteMtime < localInfo.mtime) operation = "Old";
+            else operation = "Conflict";
+        }
+
+        if (operation) {
+            const allowedActions = getAllowedActions(operation);
+            const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
+            const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
+            items.push({ filename, operation, zipName: latest.zipName, modified: latest.modified, action, allowedActions, defaultAction });
+        }
+    }
+
+    // Extra: local files not in remote TOC
+    for (const filename of localFileMap.keys()) {
+        if (shouldIgnore(filename)) continue;
+        if (!(filename in remoteToc)) {
+            const operation: SyncOperation = "Extra (Delete)";
+            const allowedActions = getAllowedActions(operation);
+            const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
+            const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
+            items.push({ filename, operation, zipName: "", modified: "", action, allowedActions, defaultAction });
+        }
+    }
+
+    return items;
+}
+
 export function applySendBatchToToc(
     toc: TocMap,
     updates: TocUpdate[],
