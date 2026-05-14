@@ -123,6 +123,69 @@
 	padding-top: 0.75em;
 }
 
+/* Sync progress dialog */
+.diffzip-sync-progress-dialog {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.diffzip-sync-progress-footer {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.diffzip-sync-progress-message {
+	min-height: 1.2em;
+}
+
+.diffzip-sync-progress-buttons {
+	display: flex;
+	justify-content: flex-end;
+}
+
+/* Generic progress fragment */
+.diffzip-progress-wrap {
+	width: 100%;
+	max-width: min(90vw, 42rem);
+	min-width: 200px;
+	min-height: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.diffzip-progress-title-line {
+	margin-top: 4px;
+	display: flex;
+	gap: 0.5em;
+	align-items: baseline;
+}
+
+.diffzip-progress-title {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.diffzip-progress-numeric {
+	margin-left: auto;
+	flex: 0 0 auto;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.diffzip-progress-bar {
+	width: 100%;
+}
+
+.diffzip-progress-note {
+	white-space: pre-wrap;
+	word-break: break-word;
+	min-height: 1.2em;
+	color: var(--text-muted);
+}
+
 .diffzip-sync-table thead {
 	display: none;
 }

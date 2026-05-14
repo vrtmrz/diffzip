@@ -2,6 +2,7 @@
 // Archive.ts uses `window.setTimeout`, so we patch it here before importing.
 if (typeof window === "undefined") {
     (globalThis as unknown as Record<string, unknown>).window = globalThis;
+    (globalThis as unknown as Record<string, unknown>).activeWindow = globalThis;
 }
 
 import { Archiver, Extractor } from "./Archive.ts";

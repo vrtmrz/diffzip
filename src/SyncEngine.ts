@@ -4,7 +4,7 @@
  */
 
 import { Archiver } from "./Archive.ts";
-import { computeDigest, pieces, toArrayBuffer } from "./util.ts";
+import { computeDigest, humanReadableSize, pieces, toArrayBuffer } from "./util.ts";
 import { InfoFile, type FileInfos } from "./types.ts";
 import {
     applySendBatchToToc,
@@ -139,7 +139,7 @@ export async function executeSend(
         }
         const content = await vault.readBinary(normalized);
         if (content === false) throw new Error(`Could not read local file: ${item.filename}`);
-        const bytes = new Uint8Array(content as ArrayBuffer);
+        const bytes = new Uint8Array(content);
         const digest = await computeDigest(bytes);
         preparedFiles.push({ filename: item.filename, content: bytes, digest, mtime: stat.mtime, size: bytes.byteLength });
     }
@@ -151,7 +151,13 @@ export async function executeSend(
         maxTotalSizeInZip,
     );
     if (oversizedFiles.length > 0) {
-        console.warn(`⚠️ Oversized files placed in solo ZIPs: ${oversizedFiles.join(", ")}`);
+        const oversizedList = oversizedFiles
+            .map((filename) => {
+                const file = preparedFiles.find((entry) => entry.filename === filename);
+                return file ? `${filename} (${humanReadableSize(file.size)})` : filename;
+            })
+            .join(", ");
+        console.warn(`⚠️ Oversized files placed in solo ZIPs: ${oversizedList}`);
     }
 
     const preparedFileByPath = new Map(preparedFiles.map((f) => [f.filename, f] as const));
@@ -184,7 +190,7 @@ export async function executeSend(
 
         // Write ZIP (with splitting)
         const writtenFiles = await _writeSendZip(
-            zipName, zippedFiles, nextToc as FileInfos,
+            zipName, zippedFiles, nextToc satisfies FileInfos,
             backup, options, onProgress,
         );
 

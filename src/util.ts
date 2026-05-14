@@ -24,3 +24,20 @@ export function toArrayBuffer(arr: Uint8Array<ArrayBuffer> | ArrayBuffer | DataV
 
     return arr;
 }
+
+export function humanReadableSize(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+
+    const units = ["KB", "MB", "GB", "TB", "PB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+
+    const rounded = value >= 10 ? value.toFixed(1) : value.toFixed(2);
+    return `${rounded.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1")} ${units[unitIndex]}`;
+}

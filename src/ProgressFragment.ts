@@ -63,6 +63,11 @@ export class ProgressFragment {
     _onProgress?: () => void;
 
     /**
+     * Formats the numeric progress text.
+     */
+    _formatNumeric?: (value: number, total: number, isCancelled: boolean) => string;
+
+    /**
      * Indicates whether the progress has been cancelled.
      */
     _isCancelled = false;
@@ -198,13 +203,16 @@ export class ProgressFragment {
             if (this.isCancelled) {
                 this._numericStatusEl.textContent = `- / -`;
                 this.computeMaxWidth();
+                return;
             }
             if (this.isStarted) {
-                this._numericStatusEl.textContent = `${this._value} / ${this._total}`;
+                this._numericStatusEl.textContent = this._formatNumeric
+                    ? this._formatNumeric(this._value, this._total, this.isCancelled)
+                    : `${this._value} / ${this._total}`;
                 this.computeMaxWidth();
-            } else {
-                this._numericStatusEl.textContent = "";
+                return;
             }
+            this._numericStatusEl.textContent = "";
         }
     }
 
@@ -245,32 +253,19 @@ export class ProgressFragment {
      * Computes and sets the minimum width and height of the wrapper based on content.
      */
     computeMaxWidth() {
-        if (this._wrapperEl) {
-            const wrapperRect = this._wrapperEl.getBoundingClientRect();
-            const wrapperW = wrapperRect.width;
-            const wrapperH = wrapperRect.height;
-            if (wrapperW > this.minWidth) {
-                this.minWidth = wrapperW;
-                this._wrapperEl.style.minWidth = `${this.minWidth}px`;
-            }
-            if (wrapperH > this.minHeight) {
-                this.minHeight = wrapperH;
-                this._wrapperEl.style.minHeight = `${this.minHeight}px`;
-            }
-        } else {
-            console.warn(`Wrapper is not connected`);
-        }
+        // Keep layout sizing in CSS classes to avoid runtime min-width inflation.
     }
 
     /**
      * Constructs a new ProgressFragment.
      * @param options - Initialisation options for value, total, title, and callbacks.
      */
-    constructor({ value = 0, total = 0, title = "", onComplete, onCancel, onReady, onProgress }: {
+    constructor({ value = 0, total = 0, title = "", onComplete, onCancel, onReady, onProgress, formatNumeric }: {
         value?: number; total?: number; title?: string;
         onComplete?: () => void; onCancel?: () => void;
         onReady?: (fragment: DocumentFragment) => void;
         onProgress?: () => void;
+        formatNumeric?: (value: number, total: number, isCancelled: boolean) => string;
 
     }) {
         this._value = value ?? 0;
@@ -280,6 +275,7 @@ export class ProgressFragment {
         this._onCancel = onCancel;
         this._onReady = onReady;
         this._onProgress = onProgress;
+        this._formatNumeric = formatNumeric;
         this._fragment = this.constructFragment();
         this.__isApplying = true;
         this.applyProperties();
@@ -292,28 +288,23 @@ export class ProgressFragment {
     constructFragment() {
         const f = document.createDocumentFragment();
         const d = document.createElement("div");
-        d.style.minWidth = `${this.minWidth}px`;
-        d.style.width = "100%";
-        d.style.minHeight = `${this.minHeight}px`;
-        d.style.display = "flex";
-        d.style.flexDirection = "column";
+        d.classList.add("diffzip-progress-wrap");
         const titleLine = document.createElement("div");
-        titleLine.style.marginTop = "4px";
+        titleLine.classList.add("diffzip-progress-title-line");
         const lbl = document.createElement("label");
+        lbl.classList.add("diffzip-progress-title");
         this._titleEl = lbl;
         const numeric = document.createElement("span");
-        numeric.style.marginLeft = "auto";
+        numeric.classList.add("diffzip-progress-numeric");
         this._numericStatusEl = numeric;
-        titleLine.style.display = "flex";
         titleLine.appendChild(lbl);
         titleLine.appendChild(numeric);
         d.appendChild(titleLine);
         const p = document.createElement("progress");
-        // p.style.flexGrow = "1";
-        p.style.width = "100%";
+        p.classList.add("diffzip-progress-bar");
         this._progressEl = p;
         this._noteEl = document.createElement("span");
-        this._noteEl.style.whiteSpace = "pre-wrap";
+        this._noteEl.classList.add("diffzip-progress-note");
         d.appendChild(p);
         d.appendChild(this._noteEl);
         f.appendChild(d);
