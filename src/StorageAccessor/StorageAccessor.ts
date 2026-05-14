@@ -5,7 +5,7 @@ import { toArrayBuffer } from "../util.ts";
 
 
 export abstract class StorageAccessor {
-    type: StorageAccessorType;
+    abstract type: StorageAccessorType;
     abstract sep: string;
     public plugin: DiffZipBackupPlugin;
     get app() {
@@ -44,7 +44,7 @@ export abstract class StorageAccessor {
         const encryptedData = await this._readBinary(path, preventUseCache);
         if (encryptedData === false) return false;
         if (!this.isLocal && this.settings.passphraseOfZip) {
-            return toArrayBuffer(await decryptCompatOpenSSL(new Uint8Array(encryptedData), this.settings.passphraseOfZip, 10000) as Uint8Array<ArrayBuffer>);
+            return toArrayBuffer(await decryptCompatOpenSSL(new Uint8Array(encryptedData), this.settings.passphraseOfZip, 10000));
         }
         return encryptedData;
     }
@@ -57,7 +57,7 @@ export abstract class StorageAccessor {
     async writeBinary(path: string, data: ArrayBuffer): Promise<boolean> {
         let content = data;
         if (!this.isLocal && this.settings.passphraseOfZip) {
-            content = toArrayBuffer(await encryptCompatOpenSSL(new Uint8Array(data), this.settings.passphraseOfZip, 10000) as Uint8Array<ArrayBuffer>);
+            content = toArrayBuffer(await encryptCompatOpenSSL(new Uint8Array(data), this.settings.passphraseOfZip, 10000));
         }
         await this.ensureDirectory(path);
         return await this._writeBinary(path, content);
@@ -71,6 +71,7 @@ export abstract class StorageAccessor {
 
     abstract _writeBinary(path: string, data: ArrayBuffer): Promise<boolean>;
     abstract _readBinary(path: string, preventUseCache?: boolean): Promise<ArrayBuffer | false>;
+    abstract deleteBinary(path: string): Promise<boolean>;
 
     normalizePath(path: string): string {
         return normalizePath(path);

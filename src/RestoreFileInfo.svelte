@@ -24,7 +24,7 @@
         )
     );
 
-    let selectedTimestamp = $state(0);
+    // let selectedTimestamp = $state(0);
 </script>
 
 <div class="diffzip-list-row">

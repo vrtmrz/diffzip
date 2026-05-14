@@ -1,34 +1,40 @@
-import { Modal, Notice, TFile, type App } from "obsidian";
+import { Modal, Notice, TFile, stringifyYaml, type App } from "obsidian";
 import { mount, unmount } from "svelte";
-import { computeDigest } from "./util.ts";
+import { Archiver } from "./Archive.ts";
+import { computeDigest, pieces, toArrayBuffer } from "./util.ts";
 import { ProgressFragment } from "./ProgressFragment.ts";
 import { confirmWithMessage } from "./dialog.ts";
-import type { FileInfos } from "./types.ts";
+import { InfoFile, type FileInfos } from "./types.ts";
 import type DiffZipBackupPlugin from "../main.ts";
 import SyncRemoteComponent from "./SyncRemote.svelte";
+import {
+    applySendBatchToToc,
+    getAllowedActions,
+    getDefaultAction,
+    isActionAllowed,
+    planSendBatches,
+    type SyncAction,
+    type SyncOperation,
+    type TocUpdate,
+} from "./SyncPlanner.ts";
 
-export type SyncOperation =
-    | "Add"
-    | "Update"
-    | "Revert"
-    | "Conflict"
-    | "Delete"
-    | "Extra (Delete)"
-    | "Same";
+export type { SyncAction, SyncOperation } from "./SyncPlanner.ts";
 
 export type SyncItem = {
     filename: string;
     operation: SyncOperation;
     zipName: string;
     modified: string;
-    checked: boolean;
+    action: SyncAction;
+    allowedActions: SyncAction[];
+    defaultAction: SyncAction;
 };
 
 const OP_ORDER: Record<SyncOperation, number> = {
     Conflict: 0,
     Add: 1,
-    Update: 2,
-    Revert: 3,
+    Updated: 2,
+    Old: 3,
     Delete: 4,
     "Extra (Delete)": 5,
     Same: 6,
@@ -46,7 +52,7 @@ export class SyncRemoteDialog extends Modal {
 
     async onOpen() {
         const { contentEl } = this;
-        this.titleEl.setText("Selective Apply Remote");
+        this.titleEl.setText("Selective Sync Remote");
         contentEl.empty();
 
         const progress = new ProgressFragment({
@@ -94,9 +100,39 @@ export class SyncRemoteDialog extends Modal {
             const items: SyncItem[] = [];
             const pluginDir = this.plugin.manifest.dir;
 
+            // Build ignore patterns when hidden folders are not included
+            const ignorePatterns: string[] = [];
+            if (!this.plugin.settings.includeHiddenFolder) {
+                ignorePatterns.push(
+                    "node_modules",
+                    ".git",
+                    this.plugin.app.vault.configDir + "/trash",
+                    this.plugin.app.vault.configDir + "/workspace.json",
+                    this.plugin.app.vault.configDir + "/workspace-mobile.json",
+                );
+            }
+
+            const shouldIgnoreFile = (filename: string): boolean => {
+                if (ignorePatterns.length === 0) return false;
+                // Check if file matches any ignore pattern
+                for (const pattern of ignorePatterns) {
+                    if (filename.endsWith(pattern) || filename.startsWith(pattern + "/")) {
+                        return true;
+                    }
+                    // Check for hidden files/folders in path
+                    if (filename.split("/").some((part) => part.startsWith("."))) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
             for (const [filename, fileInfo] of Object.entries(remoteToc)) {
                 // Skip plugin own files (same as restoreVault)
                 if (pluginDir && filename.startsWith(pluginDir)) continue;
+
+                // Skip hidden files/folders when includeHiddenFolder is false
+                if (shouldIgnoreFile(filename)) continue;
 
                 const history = [...fileInfo.history].sort(
                     (a, b) =>
@@ -107,74 +143,68 @@ export class SyncRemoteDialog extends Modal {
                 const latest = history[0];
                 const isRemoteMissing = fileInfo.missing === true;
                 const localInfo = localFileMap.get(filename);
+                let operation: SyncOperation | undefined;
 
                 if (isRemoteMissing) {
                     if (localInfo) {
-                        items.push({
-                            filename,
-                            operation: "Delete",
-                            zipName: latest.zipName,
-                            modified: latest.modified,
-                            checked: true,
-                        });
+                        operation = "Delete";
                     }
                 } else if (!localInfo) {
-                    items.push({
-                        filename,
-                        operation: "Add",
-                        zipName: latest.zipName,
-                        modified: latest.modified,
-                        checked: true,
-                    });
+                    operation = "Add";
                 } else if (latest.digest === localInfo.digest) {
-                    items.push({
-                        filename,
-                        operation: "Same",
-                        zipName: "",
-                        modified: latest.modified,
-                        checked: false,
-                    });
+                    operation = "Same";
                 } else {
                     const remoteMtime = new Date(latest.modified).getTime();
                     const localMtime = localInfo.mtime;
                     if (remoteMtime > localMtime) {
-                        items.push({
-                            filename,
-                            operation: "Update",
-                            zipName: latest.zipName,
-                            modified: latest.modified,
-                            checked: true,
-                        });
+                        operation = "Updated";
                     } else if (remoteMtime < localMtime) {
-                        items.push({
-                            filename,
-                            operation: "Revert",
-                            zipName: latest.zipName,
-                            modified: latest.modified,
-                            checked: true,
-                        });
+                        operation = "Old";
                     } else {
                         // Same mtime, different digest → Conflict
-                        items.push({
-                            filename,
-                            operation: "Conflict",
-                            zipName: latest.zipName,
-                            modified: latest.modified,
-                            checked: false,
-                        });
+                        operation = "Conflict";
                     }
+                }
+
+                if (operation) {
+                    const allowedActions = getAllowedActions(operation);
+                    const defaultAction = getDefaultAction(operation, {
+                        destructiveDefaultsEnabled: this.plugin.settings.defaultDestructiveSyncActions,
+                    });
+                    const action = isActionAllowed(operation, defaultAction)
+                        ? defaultAction
+                        : "None";
+                    items.push({
+                        filename,
+                        operation,
+                        zipName: latest.zipName,
+                        modified: latest.modified,
+                        action,
+                        allowedActions,
+                        defaultAction,
+                    });
                 }
             }
 
             // Extra: local files not tracked by remote TOC at all
             for (const filename of localFileMap.keys()) {
                 if (!(filename in remoteToc)) {
+                    const operation: SyncOperation = "Extra (Delete)";
+                    const allowedActions = getAllowedActions(operation);
+                    const defaultAction = getDefaultAction(operation, {
+                        destructiveDefaultsEnabled: this.plugin.settings.defaultDestructiveSyncActions,
+                    });
+                    const action = isActionAllowed(operation, defaultAction)
+                        ? defaultAction
+                        : "None";
                     items.push({
                         filename,
-                        operation: "Extra (Delete)",
+                        operation,
                         zipName: "",
                         modified: "",
-                        checked: false,
+                        action,
+                        allowedActions,
+                        defaultAction,
                     });
                 }
             }
@@ -190,8 +220,8 @@ export class SyncRemoteDialog extends Modal {
                 target: contentEl,
                 props: {
                     initialItems: items,
-                    onApply: async (checkedItems: SyncItem[]) => {
-                        await this.applySync(checkedItems);
+                    onApply: async (updatedItems: SyncItem[]) => {
+                        await this.applySync(updatedItems);
                     },
                     onCancel: () => this.close(),
                 },
@@ -204,15 +234,26 @@ export class SyncRemoteDialog extends Modal {
         }
     }
 
-    async applySync(checkedItems: SyncItem[]) {
-        const destructiveOps = checkedItems.filter((i) =>
-            ["Delete", "Revert", "Extra", "Conflict"].includes(i.operation),
+    async applySync(items: SyncItem[]) {
+        const fetchItems = items.filter((i) => i.action === "Fetch");
+        const sendItems = items.filter((i) => i.action === "Send");
+
+        if (fetchItems.length === 0 && sendItems.length === 0) {
+            this.close();
+            new Notice("No sync action selected.");
+            return;
+        }
+
+        const destructiveOps = items.filter(
+            (i) =>
+                i.action !== "None" &&
+                ["Delete", "Extra (Delete)"].includes(i.operation),
         );
 
         if (destructiveOps.length > 0) {
             const APPLY = "Apply";
             const CANCEL = "Cancel";
-            const msg = `**${destructiveOps.length}** destructive operation(s) are selected (Delete / Revert / Extra / Conflict).\n\nAre you sure you want to proceed?`;
+            const msg = `**${destructiveOps.length}** destructive sync operation(s) are selected (Delete / Extra (Delete)).\n\nAre you sure you want to proceed?`;
             const result = await confirmWithMessage(
                 this.plugin,
                 "Confirm Apply",
@@ -223,11 +264,48 @@ export class SyncRemoteDialog extends Modal {
             if (result !== APPLY) return;
         }
 
-        // Group files by ZIP for efficient extraction
+        this.close();
+
+        let fetched = 0;
+        let sent = 0;
+
+        if (fetchItems.length > 0) {
+            const fetchResult = await this.applyFetch(fetchItems);
+            fetched = fetchResult.done;
+            if (fetchResult.failed.length > 0) {
+                const msg = `**${fetched - fetchResult.failed.length}** file(s) fetched successfully.\n\n**${fetchResult.failed.length}** file(s) failed:\n${fetchResult.failed.map((f) => `- ${f}`).join("\n")}\n\nSend phase was skipped because fetch failed.`;
+                await confirmWithMessage(
+                    this.plugin,
+                    "Sync stopped by fetch errors",
+                    msg,
+                    ["Close"],
+                    "Close",
+                );
+                return;
+            }
+        }
+
+        if (sendItems.length > 0) {
+            try {
+                sent = await this.applySend(sendItems);
+            } catch (e) {
+                new Notice(
+                    `Send phase failed: ${e instanceof Error ? e.message : String(e)}`,
+                );
+                return;
+            }
+        }
+
+        new Notice(
+            `Sync completed. Fetch: ${fetched} file(s), Send: ${sent} file(s).`,
+        );
+    }
+
+    async applyFetch(fetchItems: SyncItem[]) {
         const zipFileMap = new Map<string, string[]>();
         const deleteFiles: string[] = [];
-        for (const item of checkedItems) {
-            if (item.operation === "Delete" || item.operation === "Extra (Delete)") {
+        for (const item of fetchItems) {
+            if (item.operation === "Delete") {
                 deleteFiles.push(item.filename);
             } else {
                 const arr = zipFileMap.get(item.zipName) ?? [];
@@ -235,8 +313,6 @@ export class SyncRemoteDialog extends Modal {
                 zipFileMap.set(item.zipName, arr);
             }
         }
-
-        this.close();
 
         const totalOps =
             [...zipFileMap.values()].reduce((a, b) => a + b.length, 0) +
@@ -287,23 +363,214 @@ export class SyncRemoteDialog extends Modal {
 
         if (failed.length > 0) {
             const msg = `**${done - failed.length}** file(s) mirrored successfully.\n\n**${failed.length}** file(s) failed:\n${failed.map((f) => `- ${f}`).join("\n")}`;
-            await confirmWithMessage(
-                this.plugin,
-                "Mirror completed with errors",
-                msg,
-                ["Close"],
-                "Close",
-            );
-        } else {
-            new Notice(
-                `${done} file${done !== 1 ? "s" : ""} mirrored successfully.`,
+            this.plugin.logWrite(msg);
+        }
+
+        return { done, failed };
+    }
+
+    makeSyncZipName(batchIndex: number): string {
+        const today = new Date();
+        const secondsInDay =
+            ~~(today.getTime() / 1000 - today.getTimezoneOffset() * 60) % 86400;
+        return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}-${secondsInDay}-sync-${batchIndex + 1}.zip`;
+    }
+
+    async rollbackWrittenZipFiles(writtenFiles: string[]) {
+        const failed: string[] = [];
+        for (const path of writtenFiles) {
+            const ok = await this.plugin.backups.deleteBinary(path);
+            if (!ok) failed.push(path);
+        }
+        if (failed.length > 0) {
+            this.plugin.logWrite(
+                `Failed to rollback ${failed.length} ZIP file(s):\n${failed.join("\n")}`,
             );
         }
+        return failed;
+    }
+
+    async writeSendZip(
+        zipName: string,
+        files: { filename: string; content: Uint8Array<ArrayBuffer>; mtime: number }[],
+        toc: FileInfos,
+    ) {
+        const zip = new Archiver();
+        for (const file of files) {
+            zip.addFile(file.content, file.filename, { mtime: file.mtime });
+        }
+
+        const tocTimeStamp = new Date().getTime();
+        zip.addTextFile(`\`\`\`\n${stringifyYaml(toc)}\n\`\`\`\n`, InfoFile, {
+            mtime: tocTimeStamp,
+        });
+
+        const buf = await zip.finalize();
+        const step =
+            this.plugin.settings.maxSize / 1 == 0
+                ? buf.byteLength + 1
+                : (this.plugin.settings.maxSize / 1) * 1024 * 1024;
+        let pieceCount = 0;
+        if (buf.byteLength > step) pieceCount = 1;
+
+        const writtenFiles: string[] = [];
+        const chunks = pieces(buf, step);
+        for (const chunk of chunks) {
+            const outZipFile = this.plugin.backups.normalizePath(
+                `${this.plugin.backupFolder}${this.plugin.sep}${zipName}${pieceCount == 0 ? "" : "." + `00${pieceCount}`.slice(-3)}`,
+            );
+            pieceCount++;
+            const ok = await this.plugin.backups.writeBinary(
+                outZipFile,
+                toArrayBuffer(chunk),
+            );
+            if (!ok) {
+                await this.rollbackWrittenZipFiles(writtenFiles);
+                throw new Error(`Creating ${outZipFile} failed`);
+            }
+            writtenFiles.push(outZipFile);
+        }
+
+        return writtenFiles;
+    }
+
+    async applySend(sendItems: SyncItem[]) {
+        const preparedFiles = [] as {
+            filename: string;
+            content: Uint8Array<ArrayBuffer>;
+            digest: string;
+            mtime: number;
+            size: number;
+        }[];
+        const preparedMissing = [] as { filename: string; modifiedTime: number }[];
+
+        for (const item of sendItems) {
+            const normalized = this.plugin.vaultAccess.normalizePath(item.filename);
+            const stat = await this.plugin.vaultAccess.stat(normalized);
+            if (!stat) {
+                preparedMissing.push({
+                    filename: item.filename,
+                    modifiedTime: Date.now(),
+                });
+                continue;
+            }
+
+            const content = await this.plugin.vaultAccess.readBinary(normalized);
+            if (content === false) {
+                throw new Error(`Could not read local file: ${item.filename}`);
+            }
+            const bytes = new Uint8Array(content);
+            const digest = await computeDigest(bytes);
+            preparedFiles.push({
+                filename: item.filename,
+                content: bytes,
+                digest,
+                mtime: stat.mtime,
+                size: bytes.byteLength,
+            });
+        }
+
+        const maxFilesInZip = this.plugin.settings.maxFilesInZip;
+        const maxTotalSizeInZip =
+            this.plugin.settings.maxTotalSizeInZip > 0
+                ? this.plugin.settings.maxTotalSizeInZip * 1024 * 1024
+                : 0;
+
+        const { batches, oversizedFiles } = planSendBatches(
+            preparedFiles.map((f) => ({ filename: f.filename, size: f.size })),
+            maxFilesInZip,
+            maxTotalSizeInZip,
+        );
+
+        if (oversizedFiles.length > 0) {
+            this.plugin.logWrite(
+                `⚠️ These files exceed max total source size in a single ZIP and will be placed in individual ZIPs:\n${oversizedFiles.join("\n")}`,
+            );
+        }
+
+        const preparedFileByPath = new Map(
+            preparedFiles.map((f) => [f.filename, f] as const),
+        );
+
+        const effectiveBatches =
+            batches.length > 0 ? batches : [{ files: [], totalSize: 0 }];
+
+        let toc = await this.plugin.loadTOC();
+        let sentCount = 0;
+
+        for (let index = 0; index < effectiveBatches.length; index++) {
+            const batch = effectiveBatches[index];
+            const zipName = this.makeSyncZipName(index);
+            const processedAt = Date.now();
+            const updates = [] as TocUpdate[];
+            const zippedFiles = [] as {
+                filename: string;
+                content: Uint8Array<ArrayBuffer>;
+                mtime: number;
+            }[];
+
+            for (const planned of batch.files) {
+                const prepared = preparedFileByPath.get(planned.filename);
+                if (!prepared) {
+                    throw new Error(`Planned file is missing in preparation: ${planned.filename}`);
+                }
+                updates.push({
+                    kind: "file",
+                    filename: prepared.filename,
+                    digest: prepared.digest,
+                    mtime: prepared.mtime,
+                });
+                zippedFiles.push({
+                    filename: prepared.filename,
+                    content: prepared.content,
+                    mtime: prepared.mtime,
+                });
+            }
+
+            if (index === 0) {
+                for (const missing of preparedMissing) {
+                    updates.push({
+                        kind: "missing",
+                        filename: missing.filename,
+                        modifiedTime: missing.modifiedTime,
+                    });
+                }
+            }
+
+            const nextToc = applySendBatchToToc(
+                toc,
+                updates,
+                zipName,
+                processedAt,
+            ) satisfies FileInfos;
+
+            const writtenFiles = await this.writeSendZip(zipName, zippedFiles, nextToc);
+            const tocFilePath = this.plugin.backups.normalizePath(
+                `${this.plugin.backupFolder}${this.plugin.sep}${InfoFile}`,
+            );
+            const tocSaved = await this.plugin.backups.writeTOC(
+                tocFilePath,
+                toArrayBuffer(
+                    new TextEncoder().encode(`\`\`\`\n${stringifyYaml(nextToc)}\n\`\`\`\n`),
+                ),
+            );
+            if (!tocSaved) {
+                await this.rollbackWrittenZipFiles(writtenFiles);
+                throw new Error(
+                    `TOC update failed after writing ${zipName}. ZIP files were rolled back when possible.`,
+                );
+            }
+
+            toc = nextToc;
+            sentCount += updates.length;
+        }
+
+        return sentCount;
     }
 
     onClose() {
         if (this.component) {
-            unmount(this.component);
+            void unmount(this.component);
             this.component = undefined;
         }
         const { contentEl } = this;

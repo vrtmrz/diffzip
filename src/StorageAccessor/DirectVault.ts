@@ -35,6 +35,17 @@ export class DirectVault extends StorageAccessor {
         return this.app.vault.adapter.readBinary(path);
     }
 
+    async deleteBinary(path: string): Promise<boolean> {
+        try {
+            if (!(await this.isFileExists(path))) return true;
+            await this.app.vault.adapter.remove(path);
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    }
+
     async stat(path: string): Promise<false | Stat> {
         const stat = await this.app.vault.adapter.stat(path);
         if (!stat) return false;

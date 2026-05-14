@@ -77,6 +77,20 @@ export class S3Bucket extends StorageAccessor {
         return toArrayBuffer(resultByteArray);
     }
 
+    async deleteBinary(path: string): Promise<boolean> {
+        const client = await this.getClient();
+        try {
+            await client.deleteObject({
+                Bucket: this.settings.bucket,
+                Key: path,
+            });
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    }
+
     stat(path: string): Promise<false | Stat> {
         throw new Error("Unsupported operation.");
     }

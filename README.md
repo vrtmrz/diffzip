@@ -24,10 +24,17 @@ We can store all the files which have been modified, into a ZIP file.
 4. Select the place to save the restored file.
 5. We got an old file.
 
-### Selective Apply a file (Lightweight Synchronisation)
-1. Perform `Selective Apply Remote Backup (Check and Mirror)` from the command palette.
-2. Select the file you want to apply.
-3. Perform `Apply` to apply the differences.
+### Selective Sync (Lightweight Synchronisation)
+This is now a practical sync workflow, not only a one-way mirror.
+We can decide action per file as `None`, `Fetch` (take remote to local), or `Send` (treat current local as source and create new backup entries).
+`Fetch` is executed first, then `Send` is executed. If any fetch operation fails, send phase is stopped to keep consistency.
+
+When send is selected, files are grouped into multiple ZIPs while respecting both limits (`Max files in a single zip` and `Max total source size in a single ZIP in MB`).
+The TOC is updated sequentially per committed ZIP. If TOC update fails, just-created ZIP files are rolled back as much as possible.
+
+1. Perform `Selective Sync Remote Backup` from the command palette.
+2. Select each file action (`None`, `Fetch`, or `Send`).
+3. Perform `Apply` to run the selected sync operations.
 
 ## Settings
 
@@ -39,6 +46,7 @@ We can store all the files which have been modified, into a ZIP file.
 | Start backup at launch               | When the plug-in has been loaded, Differential backup will be created automatically.                                                                                                    |
 | Auto backup style | Check differences to... `Full` to all files, `Only new` to the files which were newer than the backup, `Non-destructive` as same as Only new but not includes the deletion. |
 | Include hidden folder                | Backup also the configurations, plugins, themes, and, snippets.                                                                                                                         |
+| Default destructive sync actions     | On selective sync screen, when enabled, `Delete` defaults to `Fetch` and `Extra (Delete)` defaults to `Send`.                                                                         |
 | Backup Destination                   | Where to save the backup `Inside the vault`, `Anywhere (Desktop only)`, and `S3 bucket` are available. `Anywhere` is on the bleeding edge. Not safe. Only available on desktop devices. |
 | Restore folder                       | The folder which restored files will be stored.                                                                                                                                         |
 | Max files in a single zip            | How many files are stored in a single ZIP file.                                                                                                                                         |

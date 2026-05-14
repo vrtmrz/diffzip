@@ -43,6 +43,21 @@ export class NormalVault extends StorageAccessor {
         return this.app.vault.adapter.readBinary(path);
     }
 
+    async deleteBinary(path: string): Promise<boolean> {
+        try {
+            const af = this.app.vault.getAbstractFileByPath(path);
+            if (af == null) return true;
+            if (af instanceof TFile) {
+                await this.app.vault.delete(af, true);
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    }
+
     async stat(path: string): Promise<false | Stat> {
         const af = this.app.vault.getAbstractFileByPath(path);
         if (af == null) return false;

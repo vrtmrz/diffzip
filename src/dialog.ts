@@ -202,7 +202,7 @@ export class PopOverSelectString extends FuzzySuggestModal<string> {
     }
 
     onClose(): void {
-        setTimeout(() => {
+        window.setTimeout(() => {
             if (this.callback != undefined) {
                 this.callback("");
             }

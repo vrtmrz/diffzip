@@ -31,7 +31,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 
     get isMobile(): boolean {
         // @ts-ignore
-        return this.app.isMobile;
+        return !!this.app.isMobile;
     }
     get isDesktopMode(): boolean {
         return this.settings.desktopFolderEnabled && !this.isMobile;
@@ -61,7 +61,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 
     get sep(): string {
         //@ts-ignore
-        return this.isDesktopMode ? this.app.vault.adapter.path.sep : "/";
+        return (this.isDesktopMode ? this.app.vault.adapter.path.sep : "/") as string;
     }
 
     messages = {} as Record<string, NoticeWithTimer>;
@@ -139,7 +139,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                     return {};
                 }
                 const tocStr = new TextDecoder().decode(tocBin);
-                toc = parseYaml(tocStr.replace(/^```$/gm, ""));
+                toc = parseYaml(tocStr.replace(/^```$/gm, "")) as FileInfos;
                 if (toc == null) {
                     this.logMessage(`PARSE ERROR: Could not parse Backup information`, "proc-index");
                     toc = {};
@@ -171,7 +171,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 value: 0,
                 total: 0,
                 onComplete: () => {
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         notice.hide();
                     }, 1000);
                 },
@@ -197,7 +197,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         // Find missing files
         let missingFiles = 0;
         let progressNotice: Notice | undefined;
-        let onProgress = () => {};
+        let onProgress = () => { };
         const fragmentOption = {
             total: 0,
             onComplete: () => onCloseProgress(),
@@ -251,7 +251,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                     uploadingProgress,
                 ].every((e) => e.isCompleted || e.isCancelled)
             ) {
-                setTimeout(() => {
+                window.setTimeout(() => {
                     progressNotice?.hide();
                     progressNotice = undefined;
                 }, 3000);
@@ -446,8 +446,8 @@ export default class DiffZipBackupPlugin extends Plugin {
             log(`Backup information has been updated`, key);
             if (hasExtra && this.settings.performNextBackupOnMaxFiles) {
                 checkingProgress.isCancelled = true;
-                setTimeout(() => {
-                    this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
+                window.setTimeout(() => {
+                    void this.createZip(verbosity, [...skippableFiles, ...processedFiles], onlyNew, skipDeleted);
                 }, 10);
             } else {
                 this.logMessage(
@@ -526,7 +526,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 return;
             }
             const chunks = pieces(new Uint8Array(binary), size);
-            for await (const chunk of chunks) {
+            for (const chunk of chunks) {
                 extractor.addZippedContent(chunk);
             }
         }
@@ -566,10 +566,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                  : howToRestore == RESTORE_WITH_SUFFIX
-                    ? `${selectedWithoutExt}-${suffix}.${ext}`
-                    : "";
+                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                    : howToRestore == RESTORE_WITH_SUFFIX
+                        ? `${selectedWithoutExt}-${suffix}.${ext}`
+                        : "";
         if (!restoreAs) {
             return;
         }
@@ -730,10 +730,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                  : howToRestore == RESTORE_WITH_SUFFIX
-                    ? `${selectedWithoutExt}-${suffix}.${ext}`
-                    : "";
+                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                    : howToRestore == RESTORE_WITH_SUFFIX
+                        ? `${selectedWithoutExt}-${suffix}.${ext}`
+                        : "";
         if (!restoreAs) {
             return;
         }
@@ -750,7 +750,8 @@ export default class DiffZipBackupPlugin extends Plugin {
                 this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW ||
                 this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW_AND_EXISTING;
             const skipDeleted = this.settings.startBackupAtLaunchType == AutoBackupType.ONLY_NEW_AND_EXISTING;
-            this.createZip(false, [], onlyNew, skipDeleted);
+            // Fire and forget, no need to await
+            void this.createZip(false, [], onlyNew, skipDeleted);
         }
     }
     // onunload(): void {
@@ -848,9 +849,9 @@ export default class DiffZipBackupPlugin extends Plugin {
         const detailFiles = `<details>
 
 ${[...zipFileMap.entries()]
-    .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
-    .sort((a, b) => a.localeCompare(b))
-    .join("")}
+                .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
+                .sort((a, b) => a.localeCompare(b))
+                .join("")}
 
 
 </details>`;
@@ -913,29 +914,29 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         this.addCommand({
             id: "b-create-diff-zip",
             name: "Create Differential Backup",
-            callback: () => {
-                this.createZip(true);
+            callback: async () => {
+                await this.createZip(true);
             },
         });
         this.addCommand({
             id: "b-create-diff-zip-only-new",
             name: "Create Differential Backup Only Newer Files",
-            callback: () => {
-                this.createZip(true, [], true);
+            callback: async () => {
+                await this.createZip(true, [], true);
             },
         });
         this.addCommand({
             id: "b-create-diff-zip-only-new-and-existing",
             name: "Create Non-Destructive Differential Backup",
-            callback: () => {
-                this.createZip(true, [], false, true);
+            callback: async () => {
+                await this.createZip(true, [], false, true);
             },
         });
         this.addCommand({
             id: "b-create-diff-zip-only-new-and-existing-only-new",
             name: "Create Non-Destructive Differential Backup Only Newer Files",
-            callback: () => {
-                this.createZip(true, [], true, true);
+            callback: async () => {
+                await this.createZip(true, [], true, true);
             },
         });
 
@@ -954,14 +955,11 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
             },
         });
         this.addCommand({
-            id: "diffzip-check-and-mirror-remote",
-            name: "Selective Apply Remote Backup (Check and Mirror)",
-            callback: async () => {
+            id: "check-and-mirror-remote",
+            name: "Selective Sync Remote Backup",
+            callback: () => {
                 const storageType = getStorageTypeForBackupAccess(this);
-                if (
-                    storageType !== StorageAccessorTypes.S3 &&
-                    storageType !== StorageAccessorTypes.EXTERNAL
-                ) {
+                if (storageType !== StorageAccessorTypes.S3 && storageType !== StorageAccessorTypes.EXTERNAL) {
                     new Notice(
                         "Remote storage is not configured. Please enable S3 or Desktop external folder in settings."
                     );
@@ -975,7 +973,7 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as DiffZipBackupSettings;
     }
 
     async resetToC() {

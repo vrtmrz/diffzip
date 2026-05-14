@@ -9,11 +9,11 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     get sep(): string {
         //@ts-ignore internal API
-        return this.app.vault.adapter.path.sep;
+        return this.app.vault.adapter.path.sep as string;
     }
     get fsPromises(): FsAPI {
         //@ts-ignore internal API
-        return this.app.vault.adapter.fsPromises;
+        return this.app.vault.adapter.fsPromises as FsAPI;
     }
 
     async createFolder(absolutePath: string): Promise<void> {
@@ -39,8 +39,18 @@ export class ExternalVaultFilesystem extends StorageAccessor {
     }
 
     async _readBinary(path: string): Promise<ArrayBuffer | false> {
-        const buffer = await this.fsPromises.readFile(path) as Buffer<ArrayBuffer>;
+        const buffer = await this.fsPromises.readFile(path);
         return toArrayBuffer(buffer.buffer)
+    }
+
+    async deleteBinary(path: string): Promise<boolean> {
+        try {
+            await this.fsPromises.rm(path, { force: true });
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
     }
 
     async checkType(path: string): Promise<FileType> {

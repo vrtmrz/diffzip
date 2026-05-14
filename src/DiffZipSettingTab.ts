@@ -3,7 +3,7 @@ import { encrypt, decrypt } from "octagonal-wheels/encryption.js";
 import DiffZipBackupPlugin from "../main.ts";
 import { askSelectString } from "./dialog.ts";
 import { S3Bucket } from "./StorageAccessor/S3Bucket.ts";
-import { AutoBackupType } from "./types.ts";
+import { AutoBackupType, type DiffZipBackupSettings } from "./types.ts";
 
 export class DiffZipSettingTab extends PluginSettingTab {
     plugin: DiffZipBackupPlugin;
@@ -45,6 +45,16 @@ export class DiffZipSettingTab extends PluginSettingTab {
             .addToggle((toggle) =>
                 toggle.setValue(this.plugin.settings.includeHiddenFolder).onChange(async (value) => {
                     this.plugin.settings.includeHiddenFolder = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Default destructive sync actions")
+            .setDesc("When enabled, Delete defaults to Fetch and Extra (Delete) defaults to Send in selective sync")
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.defaultDestructiveSyncActions).onChange(async (value) => {
+                    this.plugin.settings.defaultDestructiveSyncActions = value;
                     await this.plugin.saveSettings();
                 })
             );
@@ -179,7 +189,8 @@ export class DiffZipSettingTab extends PluginSettingTab {
                             });
                             new Notice("Bucket has been created");
                         } catch (ex) {
-                            new Notice(`Bucket creation failed\n-----\n${ex?.message ?? "Unknown error"}`);
+                            const message = ex instanceof Error ? ex.message : String(ex);
+                            new Notice(`Bucket creation failed\n-----\n${message ?? "Unknown error"}`);
                             console.dir(ex);
                         }
                     })
@@ -286,7 +297,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     .setWarning()
                     .setButtonText("Reset")
                     .onClick(async () => {
-                        this.plugin.resetToC();
+                        await this.plugin.resetToC();
                     })
             );
         new Setting(containerEl)
@@ -327,6 +338,8 @@ export class DiffZipSettingTab extends PluginSettingTab {
             .addButton((button) => {
                 button.setButtonText("Copy to Clipboard").onClick(async () => {
                     const setting = JSON.stringify(this.plugin.settings);
+                    // Compatibility with old versions
+                    // eslint-disable-next-line @typescript-eslint/no-deprecated
                     const encrypted = await encrypt(setting, passphrase, false);
                     const uri = `obsidian://diffzip/settings?data=${encodeURIComponent(encrypted)}`;
                     await navigator.clipboard.writeText(uri);
@@ -352,8 +365,10 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     const uri = copiedURI;
                     const data = decodeURIComponent(uri.split("?data=")[1]);
                     try {
+                        // Compatibility with old versions
+                        // eslint-disable-next-line @typescript-eslint/no-deprecated
                         const decrypted = await decrypt(data, passphrase, false);
-                        const settings = JSON.parse(decrypted);
+                        const settings = JSON.parse(decrypted) as DiffZipBackupSettings;
                         if (
                             (await askSelectString(this.app, "Are you sure to overwrite the settings?", [
                                 "Yes",

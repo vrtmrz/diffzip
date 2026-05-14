@@ -4,7 +4,6 @@
 	import { type ListOperations } from "./RestoreView.ts";
 	import RestoreFileInfo from "./RestoreFileInfo.svelte";
 	import type { Writable } from "svelte/store";
-	let test = $state("");
 	interface Props {
 		plugin: DiffZipBackupPlugin;
 		toc: FileInfos;
@@ -26,7 +25,7 @@
 	function clearList() {
 		fileList.set([]);
 	}
-	function expandFolder(name: string, preventRender = false) {
+	function expandFolder(name: string, _preventRender = false) {
 		const folderPrefix = name.slice(0, -1);
 		const files = allFiles.filter((e) => e.startsWith(folderPrefix));
 		const newFiles = [...new Set([...$fileList, ...files])].filter(

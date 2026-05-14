@@ -145,7 +145,7 @@ export class ProgressFragment {
         }
         this.computeNumeric();
         if (this.isCompleted && this._onComplete) {
-            setTimeout(() => this._onComplete?.(), 10);
+            window.setTimeout(() => this._onComplete?.(), 10);
         }
         this.__onProgress();
     }

@@ -95,8 +95,8 @@
 }
 
 .op-add    { background-color: var(--color-green);  color: var(--text-on-accent); }
-.op-update { background-color: var(--color-blue);   color: var(--text-on-accent); }
-.op-revert { background-color: var(--color-orange); color: var(--text-on-accent); }
+.op-updated { background-color: var(--color-blue);   color: var(--text-on-accent); }
+.op-old { background-color: var(--color-orange); color: var(--text-on-accent); }
 .op-conflict { background-color: var(--color-red);  color: var(--text-on-accent); }
 .op-delete { background-color: var(--color-red);    color: var(--text-on-accent); }
 .op-extra  { background-color: var(--text-muted);   color: var(--background-primary); }
@@ -121,4 +121,107 @@
 	gap: 0.5em;
 	border-top: 1px solid var(--background-modifier-border);
 	padding-top: 0.75em;
+}
+
+.diffzip-sync-table thead {
+	display: none;
+}
+
+.diffzip-sync-table,
+.diffzip-sync-table tbody,
+.diffzip-sync-table tr,
+.diffzip-sync-table td {
+	display: block;
+}
+
+.diffzip-sync-table tr {
+	display: grid;
+	grid-template-columns: minmax(8em, auto) minmax(0, 1fr);
+	gap: 0.35em 0.5em;
+	padding: 0.5em 0.6em;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.diffzip-sync-table td {
+	padding: 0;
+	border-bottom: none;
+}
+
+.diffzip-sync-table .col-check {
+	grid-column: 1;
+	grid-row: 1;
+	width: auto;
+	text-align: left;
+}
+
+.diffzip-sync-table .col-op {
+	grid-column: 2;
+	grid-row: 1;
+	width: auto;
+}
+
+.diffzip-sync-table .col-path {
+	grid-column: 1 / -1;
+	grid-row: 2;
+}
+
+.diffzip-sync-table .col-zip,
+.diffzip-sync-table .col-mod {
+	grid-column: 1 / -1;
+	font-size: 0.8em;
+}
+
+.diffzip-sync-table .col-zip::before {
+	content: "ZIP: ";
+	color: var(--text-muted);
+}
+
+.diffzip-sync-table .col-mod::before {
+	content: "Modified: ";
+	color: var(--text-muted);
+}
+
+/* Radio action selector */
+.action-radio-group {
+	all: unset;
+	display: flex;
+	gap: 0.4em;
+	align-items: center;
+}
+
+.action-radio {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+
+.action-radio input[type="radio"] {
+	display: none;
+}
+
+.action-emoji {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2em;
+	height: 2em;
+	border-radius: 4px;
+	font-size: 1em;
+	opacity: 0.5;
+	transition: all 0.15s ease;
+	border: 1px solid transparent;
+}
+
+.action-radio input[type="radio"]:checked + .action-emoji {
+	opacity: 1;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+	font-weight: bold;
+}
+
+.action-radio input[type="radio"]:hover + .action-emoji {
+	opacity: 0.75;
+	border-color: var(--text-muted);
 }

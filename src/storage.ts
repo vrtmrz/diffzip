@@ -2,6 +2,8 @@
  * Abstract class for storage accessors and its implementations.
  */
 import type DiffZipBackupPlugin from "../main.ts";
+// Because of this is a type-only import.
+// eslint-disable-next-line import/no-nodejs-modules
 import type { promises } from "node:fs";
 import { OpenSSLCompat } from "octagonal-wheels/encryption";
 import { NormalVault } from "./StorageAccessor/NormalVault.ts";
@@ -23,6 +25,7 @@ export type FsAPI = {
     writeFile: typeof promises.writeFile;
     readFile: typeof promises.readFile;
     stat: typeof promises.stat;
+    rm: typeof promises.rm;
 };
 
 export const StorageAccessorTypes = {

@@ -1,5 +1,5 @@
 import * as fflate from "fflate";
-import { delay, promiseWithResolver } from "octagonal-wheels/promises";
+import { promiseWithResolvers, type PromiseWithResolvers } from "octagonal-wheels/promises";
 import type { XByteArray } from "./types.ts";
 
 /**
@@ -20,7 +20,7 @@ export class Archiver {
         // )
     }
 
-    _zipFilePromise = promiseWithResolver<XByteArray>();
+    _zipFilePromise: PromiseWithResolvers<XByteArray> = promiseWithResolvers<XByteArray>();
     get archivedZipFile(): Promise<XByteArray> {
         return this._zipFilePromise.promise;
     }
@@ -30,14 +30,14 @@ export class Archiver {
     }
 
     constructor() {
-        const zipFile = new fflate.Zip(async (error, dat: XByteArray, final) => this._onProgress(error, dat, final));
+        const zipFile = new fflate.Zip((error, dat: Uint8Array<ArrayBufferLike>, final) => this._onProgress(error, dat, final));
         this._zipFile = zipFile;
     }
 
-    _onProgress(err: fflate.FlateError | null, data: XByteArray, final: boolean) {
+    _onProgress(err: fflate.FlateError | null, data: Uint8Array<ArrayBufferLike>, final: boolean) {
         if (err) return this._onError(err);
         if (data && data.length > 0) {
-            this._output.push(data);
+            this._output.push(new Uint8Array(data));
             this._archiveSize += data.length;
         }
         // No error
@@ -88,7 +88,7 @@ export class Archiver {
                 if (chunkSize > MIN_CHUNK_SIZE) {
                     progress?.(processed, total, false);
                 }
-                await new Promise(res => setTimeout(res, 1));
+                await new Promise(res => window.setTimeout(res, 1));
             }
             fflateFile.push(new Uint8Array(), true);
             progress?.(processed, total, true);
@@ -116,15 +116,16 @@ export class Extractor {
         this._zipFile = unzipper;
         this._isFileShouldBeExtracted = isFileShouldBeExtracted;
         this._onExtracted = callback;
-        unzipper.onfile = async (file: fflate.UnzipFile) => {
+
+        const onFile = async (file: fflate.UnzipFile) => {
             if (await this._isFileShouldBeExtracted(file)) {
                 const data: XByteArray[] = [];
-                file.ondata = async (err, dat: XByteArray, isFinal) => {
+                const onData = async (err: fflate.FlateError | null, dat: Uint8Array, isFinal: boolean) => {
                     if (err) {
                         console.error("Error extracting file", err);
                         return;
                     }
-                    if (dat && dat.length > 0) data.push(dat);
+                    if (dat && dat.length > 0) data.push(new Uint8Array(dat));
 
                     if (isFinal) {
                         const total = new Blob(data, { type: "application/octet-stream" });
@@ -132,9 +133,11 @@ export class Extractor {
                         await this._onExtracted(file.name, result);
                     }
                 };
+                file.ondata = (err, dat, isFinal) => void onData(err, dat, isFinal);
                 file.start();
             }
         };
+        unzipper.onfile = (file) => void onFile(file);
     }
 
     addZippedContent(data: XByteArray, isFinal = false) {

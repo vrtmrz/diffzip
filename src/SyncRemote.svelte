@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { SyncItem, SyncOperation } from "./SyncRemoteDialog.ts";
+	import type { SyncAction, SyncItem, SyncOperation } from "./SyncRemoteDialog.ts";
 
 	interface Props {
 		initialItems: SyncItem[];
-		onApply: (items: SyncItem[]) => Promise<void>;
+		onApply: (_items: SyncItem[]) => Promise<void>;
 		onCancel: () => void;
 	}
 
@@ -19,50 +19,66 @@
 
 	const opClass: Record<SyncOperation, string> = {
 		Add: "op-add",
-		Update: "op-update",
-		Revert: "op-revert",
+		Updated: "op-updated",
+		Old: "op-old",
 		Conflict: "op-conflict",
 		Delete: "op-delete",
-		Extra: "op-extra",
+		"Extra (Delete)": "op-extra",
 		Same: "op-same",
 	};
 
-	function toggle(filename: string) {
+	function setAction(filename: string, action: SyncAction) {
 		items = items.map((i) =>
-			i.filename === filename ? { ...i, checked: !i.checked } : i,
+			i.filename === filename ? { ...i, action } : i,
 		);
 	}
 
 	function clear() {
-		items = items.map((i) => ({ ...i, checked: false }));
+		items = items.map((i) => ({ ...i, action: "None" }));
 	}
 
-	function synchroniseEdits() {
+	function fetchAll() {
 		items = items.map((i) => ({
 			...i,
-			checked: ["Add", "Update", "Delete"].includes(i.operation),
+			action: i.allowedActions.includes("Fetch") ? "Fetch" : "None",
 		}));
 	}
 
-	function timetravelAll() {
+	function sendAll() {
 		items = items.map((i) => ({
 			...i,
-			checked: i.operation !== "Same" && i.operation !== "Conflict",
+			action: i.allowedActions.includes("Send") ? "Send" : "None",
 		}));
 	}
 
-	function clearDeletion() {
-		items = items.map((i) =>
-			["Delete", "Extra"].includes(i.operation)
-				? { ...i, checked: false }
-				: i,
-		);
+	function sync() {
+		items = items.map((i) => ({
+			...i,
+			action: i.defaultAction,
+		}));
+	}
+
+	function syncWithDeletion() {
+		items = items.map((i) => {
+			// For Delete/Extra operations, force their default destructive actions
+			if (i.operation === "Delete" || i.operation === "Extra (Delete)") {
+				const action = i.operation === "Delete" ? "Fetch" : "Send";
+				return {
+					...i,
+					action: i.allowedActions.includes(action) ? action : "None",
+				};
+			}
+			// For other operations, use defaultAction
+			return {
+				...i,
+				action: i.defaultAction,
+			};
+		});
 	}
 
 	async function handleApply() {
 		applying = true;
-		const checked = items.filter((i) => i.checked);
-		await onApply(checked);
+		await onApply(items);
 		applying = false;
 	}
 
@@ -81,7 +97,7 @@
 		<table class="diffzip-sync-table">
 			<thead>
 				<tr>
-					<th class="col-check">✓</th>
+					<th class="col-check">Action</th>
 					<th class="col-path">File Path</th>
 					<th class="col-op">Operation</th>
 					<th class="col-zip">ZIP File</th>
@@ -92,13 +108,22 @@
 				{#each visibleItems as item (item.filename)}
 					<tr class:op-same-row={item.operation === "Same"}>
 						<td class="col-check">
-							{#if item.operation !== "Same"}
-								<input
-									type="checkbox"
-									checked={item.checked}
-									onchange={() => toggle(item.filename)}
-								/>
-							{/if}
+							<fieldset class="action-radio-group">
+								{#each item.allowedActions as action}
+									<label class="action-radio">
+										<input
+											type="radio"
+											name={`action-${item.filename}`}
+											value={action}
+											checked={item.action === action}
+											onchange={() => setAction(item.filename, action)}
+										/>
+										<span class="action-emoji" title={action}>
+											{action === "None" ? "⊘" : action === "Fetch" ? "⬇️" : "⬆️"}
+										</span>
+									</label>
+								{/each}
+							</fieldset>
 						</td>
 						<td class="col-path">{item.filename}</td>
 						<td class="col-op">
@@ -123,9 +148,10 @@
 
 	<div class="diffzip-sync-buttons">
 		<button onclick={clear}>Clear</button>
-		<button onclick={synchroniseEdits}>Synchronise Edits</button>
-		<button onclick={timetravelAll}>Timetravel</button>
-		<button onclick={clearDeletion}>Clear Deletion</button>
+		<button onclick={sync}>Sync</button>
+		<button onclick={syncWithDeletion}>Sync W/ deletion</button>
+		<button onclick={fetchAll}>Fetch All</button>
+		<button onclick={sendAll}>Send All</button>
 	</div>
 
 	<div class="diffzip-sync-footer">

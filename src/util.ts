@@ -3,7 +3,7 @@ import type { XByteArray, XDataView } from "./types.ts";
 export function* pieces(source: XByteArray, chunkSize: number): Generator<Uint8Array<ArrayBuffer>, void, void> {
     let offset = 0;
     while (offset < source.length) {
-        yield source.slice(offset, offset + chunkSize) as Uint8Array<ArrayBuffer>;
+        yield source.slice(offset, offset + chunkSize);
         offset += chunkSize;
     }
 }

@@ -28,7 +28,7 @@ export class CombinedFragment {
      * @returns The combined DocumentFragment.
      */
     buildFragment(fragments: (() => DocumentFragment)[]) {
-        const f = document.createDocumentFragment();
+        const f = activeDocument.createDocumentFragment();
         fragments.forEach(fragment => {
             f.appendChild(fragment());
         });
@@ -58,7 +58,7 @@ export class CombinedFragment {
      */
     get isVisible() {
         return Array.from(this._fragment.childNodes).some(e => {
-            return e instanceof HTMLElement && e.isShown();
+            return e.instanceOf(HTMLElement) && e.isShown();
         });
     }
 }

@@ -1,0 +1,6 @@
+{
+    "tasks": {
+        "test": "deno test --allow-all src",
+        "test:coverage": "deno test --allow-all --coverage=coverage_out src && deno coverage coverage_out --include=\"src/\" --detailed"
+    }
+}

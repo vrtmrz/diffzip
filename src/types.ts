@@ -15,6 +15,7 @@ export interface DiffZipBackupSettings {
     maxFilesInZip: number;
     maxTotalSizeInZip: number;
     performNextBackupOnMaxFiles: boolean;
+    defaultDestructiveSyncActions: boolean;
     startBackupAtLaunch: boolean;
     startBackupAtLaunchType: AutoBackupType;
     includeHiddenFolder: boolean;
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: DiffZipBackupSettings = {
     bucket: "diffzip",
     maxFilesInZip: 100,
     performNextBackupOnMaxFiles: true,
+    defaultDestructiveSyncActions: false,
     useCustomHttpHandler: false,
     passphraseOfFiles: "",
     passphraseOfZip: "",
