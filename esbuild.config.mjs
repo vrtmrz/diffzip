@@ -37,6 +37,9 @@ const context = await esbuild.context({
 	target: "es2018",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
+	define: {
+		__DIFFZIP_DEBUG__: JSON.stringify(!prod),
+	},
 	treeShaking: true,
 	outfile: "main.js",
 	plugins: [

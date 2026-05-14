@@ -146,6 +146,8 @@ export type BuildSyncItemsOptions = {
     pluginDir?: string;
     ignoreHidden?: boolean;
     ignorePatterns?: string[];
+    mtimeToleranceMs?: number;
+    debugDiffToConsole?: boolean;
 };
 
 export function buildSyncItems(
@@ -153,7 +155,14 @@ export function buildSyncItems(
     localFileMap: Map<string, { digest: string; mtime: number }>,
     options: BuildSyncItemsOptions,
 ): SyncItem[] {
-    const { destructiveDefaultsEnabled, pluginDir, ignoreHidden = false, ignorePatterns = [] } = options;
+    const {
+        destructiveDefaultsEnabled,
+        pluginDir,
+        ignoreHidden = false,
+        ignorePatterns = [],
+        mtimeToleranceMs = 0,
+        debugDiffToConsole = false,
+    } = options;
 
     const shouldIgnore = (filename: string): boolean => {
         if (pluginDir && filename.startsWith(pluginDir)) return true;
@@ -166,17 +175,28 @@ export function buildSyncItems(
     };
 
     const items: SyncItem[] = [];
+    const historyOrderTime = (h: TocHistory): number => h.processed ?? new Date(h.modified).getTime();
 
     for (const [filename, fileInfo] of Object.entries(remoteToc)) {
         if (shouldIgnore(filename)) continue;
 
         const history = [...fileInfo.history].sort(
-            (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime(),
+            (a, b) => historyOrderTime(b) - historyOrderTime(a),
         );
         if (history.length === 0) continue;
         const latest = history[0];
         const isRemoteMissing = fileInfo.missing === true;
         const localInfo = localFileMap.get(filename);
+                const fallbackHistoryDigest = history.find((h) => !!h.digest)?.digest ?? "";
+                const topLevelDigest = fileInfo.digest ?? "";
+                const remoteDigest = latest.digest || fallbackHistoryDigest || topLevelDigest;
+                const remoteDigestSource = latest.digest
+                        ? "latest"
+                        : fallbackHistoryDigest
+                            ? "history-fallback"
+                            : topLevelDigest
+                                ? "toc"
+                                : "missing";
 
         let operation: SyncOperation | undefined;
 
@@ -184,13 +204,14 @@ export function buildSyncItems(
             if (localInfo) operation = "Delete";
         } else if (!localInfo) {
             operation = "Add";
-        } else if (latest.digest === localInfo.digest) {
+        } else if (remoteDigest !== "" && remoteDigest === localInfo.digest) {
             operation = "Same";
         } else {
             const remoteMtime = new Date(latest.modified).getTime();
-            if (remoteMtime > localInfo.mtime) operation = "Updated";
-            else if (remoteMtime < localInfo.mtime) operation = "Old";
-            else operation = "Conflict";
+            const diff = remoteMtime - localInfo.mtime;
+            if (Math.abs(diff) <= mtimeToleranceMs) operation = "Conflict";
+            else if (diff > 0) operation = "Updated";
+            else operation = "Old";
         }
 
         if (operation) {
@@ -198,6 +219,34 @@ export function buildSyncItems(
             const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
             const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
             items.push({ filename, operation, zipName: latest.zipName, modified: latest.modified, action, allowedActions, defaultAction });
+
+            if (debugDiffToConsole && operation !== "Same") {
+                const remoteMtime = new Date(latest.modified).getTime();
+                const localMtime = localInfo?.mtime ?? null;
+                const mtimeDiff = localMtime == null ? null : remoteMtime - localMtime;
+                console.log("[DiffZip][SyncDiff]", {
+                    filename,
+                    operation,
+                    action,
+                    remote: {
+                        zipName: latest.zipName,
+                        modified: latest.modified,
+                        mtime: remoteMtime,
+                        digest: remoteDigest,
+                        digestSource: remoteDigestSource,
+                        rawLatestDigest: latest.digest,
+                        missing: isRemoteMissing,
+                    },
+                    local: localInfo
+                        ? {
+                              mtime: localInfo.mtime,
+                              digest: localInfo.digest,
+                          }
+                        : null,
+                    mtimeDiff,
+                    mtimeToleranceMs,
+                });
+            }
         }
     }
 
@@ -210,6 +259,18 @@ export function buildSyncItems(
             const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
             const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
             items.push({ filename, operation, zipName: "", modified: "", action, allowedActions, defaultAction });
+
+            if (debugDiffToConsole) {
+                console.log("[DiffZip][SyncDiff]", {
+                    filename,
+                    operation,
+                    action,
+                    remote: null,
+                    local: localFileMap.get(filename) ?? null,
+                    mtimeDiff: null,
+                    mtimeToleranceMs,
+                });
+            }
         }
     }
 

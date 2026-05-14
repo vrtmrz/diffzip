@@ -8,13 +8,15 @@ import type DiffZipBackupPlugin from "../main.ts";
 import SyncRemoteComponent from "./SyncRemote.svelte";
 import {
     buildSyncItems,
-    type SyncAction,
     type SyncItem,
     type SyncOperation,
 } from "./SyncPlanner.ts";
 import { executeFetch, executeSend } from "./SyncEngine.ts";
 
 export type { SyncAction, SyncItem, SyncOperation } from "./SyncPlanner.ts";
+
+declare const __DIFFZIP_DEBUG__: boolean;
+const DEBUG_SYNC_LOG = __DIFFZIP_DEBUG__;
 
 const OP_ORDER: Record<SyncOperation, number> = {
     Conflict: 0,
@@ -99,6 +101,8 @@ export class SyncRemoteDialog extends Modal {
                 pluginDir: this.plugin.manifest.dir ?? undefined,
                 ignoreHidden: !this.plugin.settings.includeHiddenFolder,
                 ignorePatterns,
+                mtimeToleranceMs: 2000,
+                debugDiffToConsole: DEBUG_SYNC_LOG,
             });
             items.sort((a, b) => {
                 const oDiff = OP_ORDER[a.operation] - OP_ORDER[b.operation];
@@ -225,6 +229,7 @@ export class SyncRemoteDialog extends Modal {
                 progress.note = note;
                 progress.value = ++done;
             },
+            DEBUG_SYNC_LOG,
         );
 
         progressNotice.hide();
@@ -256,6 +261,7 @@ export class SyncRemoteDialog extends Modal {
                         ? this.plugin.settings.maxSize * 1024 * 1024
                         : 0,
                 serializeYaml: stringifyYaml,
+                debugExecutionToConsole: DEBUG_SYNC_LOG,
             },
         );
         return sentCount;

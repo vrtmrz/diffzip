@@ -195,6 +195,26 @@ Deno.test("buildSyncItems: ignoreHidden=true filters dotfiles and patterns", () 
     assert(!names.includes(".extra-local"), ".extra-local should be filtered");
 });
 
+Deno.test("buildSyncItems: mtime tolerance avoids noisy Updated/Old", () => {
+    const remoteToc: TocMap = {
+        "near.md": makeTocEntry("near.md", "r.zip", "remote-d", BASE_MTIME + 1200),
+    };
+    const localFileMap = new Map([
+        ["near.md", { digest: "local-d", mtime: BASE_MTIME }],
+    ]);
+
+    const strict = buildSyncItems(remoteToc, localFileMap, {
+        destructiveDefaultsEnabled: false,
+    });
+    assertEquals(strict[0].operation, "Updated", "Without tolerance, remote newer should be Updated");
+
+    const tolerant = buildSyncItems(remoteToc, localFileMap, {
+        destructiveDefaultsEnabled: false,
+        mtimeToleranceMs: 2000,
+    });
+    assertEquals(tolerant[0].operation, "Conflict", "Within tolerance, should be treated as Conflict");
+});
+
 // ── executeSend tests ──────────────────────────────────────────────
 
 Deno.test("executeSend: writes ZIP and TOC to backup, returns sentCount", async () => {

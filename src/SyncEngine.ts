@@ -49,6 +49,8 @@ export type SyncEngineOptions = {
     maxSize: number; // bytes for ZIP split (0 = no split)
     /** Serialize an object as YAML text. Defaults to JSON.stringify for testability. */
     serializeYaml?: (obj: unknown) => string;
+    /** Emit verbose execution logs for fetch/send update flow. */
+    debugExecutionToConsole?: boolean;
 };
 
 // ── executeFetch ───────────────────────────────────────────────────
@@ -63,6 +65,7 @@ export async function executeFetch(
     extractor: ZipExtractAdapter,
     vaultDelete: VaultDeleteAdapter,
     onProgress?: (note: string) => void,
+    debugExecutionToConsole = false,
 ): Promise<FetchResult> {
     const zipFileMap = new Map<string, string[]>();
     const deleteFiles: string[] = [];
@@ -77,27 +80,67 @@ export async function executeFetch(
         }
     }
 
+    if (debugExecutionToConsole) {
+        console.log("[DiffZip][SyncExec][Fetch] start", {
+            totalItems: fetchItems.length,
+            extractZipCount: zipFileMap.size,
+            deleteCount: deleteFiles.length,
+            items: fetchItems.map((i) => ({
+                filename: i.filename,
+                operation: i.operation,
+                action: i.action,
+                zipName: i.zipName,
+            })),
+        });
+    }
+
     let done = 0;
     const failed: string[] = [];
 
     for (const [zipName, files] of zipFileMap) {
         onProgress?.(`Extracting ${zipName}`);
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Fetch] extracting", { zipName, files });
+        }
         try {
             await extractor.extract(zipName, files);
             done += files.length;
+            if (debugExecutionToConsole) {
+                console.log("[DiffZip][SyncExec][Fetch] extracted", { zipName, files, done });
+            }
         } catch (e) {
             failed.push(...files);
+            if (debugExecutionToConsole) {
+                console.warn("[DiffZip][SyncExec][Fetch] extract failed", {
+                    zipName,
+                    files,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
         }
     }
 
     for (const filename of deleteFiles) {
         onProgress?.(`Deleting ${filename}`);
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Fetch] deleting", { filename });
+        }
         try {
             await vaultDelete.deleteLocal(filename);
             done++;
+            if (debugExecutionToConsole) {
+                console.log("[DiffZip][SyncExec][Fetch] deleted", { filename, done });
+            }
         } catch {
             failed.push(filename);
+            if (debugExecutionToConsole) {
+                console.warn("[DiffZip][SyncExec][Fetch] delete failed", { filename });
+            }
         }
+    }
+
+    if (debugExecutionToConsole) {
+        console.log("[DiffZip][SyncExec][Fetch] done", { done, failed });
     }
 
     return { done, failed };
@@ -119,6 +162,8 @@ export async function executeSend(
     options: SyncEngineOptions,
     onProgress?: (note: string) => void,
 ): Promise<SendResult> {
+    const debugExecutionToConsole = options.debugExecutionToConsole === true;
+
     type PreparedFile = {
         filename: string;
         content: Uint8Array<ArrayBuffer>;
@@ -131,10 +176,22 @@ export async function executeSend(
     const preparedMissing: { filename: string; modifiedTime: number }[] = [];
 
     for (const item of sendItems) {
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Send] preparing", {
+                filename: item.filename,
+                operation: item.operation,
+                action: item.action,
+            });
+        }
         const normalized = vault.normalizePath(item.filename);
         const stat = await vault.stat(normalized);
         if (!stat) {
             preparedMissing.push({ filename: item.filename, modifiedTime: Date.now() });
+            if (debugExecutionToConsole) {
+                console.warn("[DiffZip][SyncExec][Send] local stat missing -> mark missing", {
+                    filename: item.filename,
+                });
+            }
             continue;
         }
         const content = await vault.readBinary(normalized);
@@ -142,6 +199,14 @@ export async function executeSend(
         const bytes = new Uint8Array(content);
         const digest = await computeDigest(bytes);
         preparedFiles.push({ filename: item.filename, content: bytes, digest, mtime: stat.mtime, size: bytes.byteLength });
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Send] prepared", {
+                filename: item.filename,
+                mtime: stat.mtime,
+                size: bytes.byteLength,
+                digest,
+            });
+        }
     }
 
     const maxTotalSizeInZip = options.maxTotalSizeInZip;
@@ -162,6 +227,21 @@ export async function executeSend(
 
     const preparedFileByPath = new Map(preparedFiles.map((f) => [f.filename, f] as const));
     const effectiveBatches = batches.length > 0 ? batches : [{ files: [], totalSize: 0 }];
+
+    if (debugExecutionToConsole) {
+        console.log("[DiffZip][SyncExec][Send] planned", {
+            sendItemCount: sendItems.length,
+            preparedFileCount: preparedFiles.length,
+            preparedMissingCount: preparedMissing.length,
+            batchCount: effectiveBatches.length,
+            oversizedFiles,
+            batches: effectiveBatches.map((b, i) => ({
+                index: i,
+                totalSize: b.totalSize,
+                files: b.files.map((f) => f.filename),
+            })),
+        });
+    }
 
     let toc = await loadToc();
     let sentCount = 0;
@@ -186,6 +266,15 @@ export async function executeSend(
             }
         }
 
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Send] batch start", {
+                index,
+                zipName,
+                files: zippedFiles.map((f) => f.filename),
+                updateCount: updates.length,
+            });
+        }
+
         const nextToc = applySendBatchToToc(toc, updates, zipName, processedAt) satisfies TocMap;
 
         // Write ZIP (with splitting)
@@ -207,8 +296,22 @@ export async function executeSend(
             throw new Error(`TOC update failed after writing ${zipName}. ZIP files rolled back.`);
         }
 
+        if (debugExecutionToConsole) {
+            console.log("[DiffZip][SyncExec][Send] batch done", {
+                index,
+                zipName,
+                writtenFiles,
+                tocFilePath,
+                tocSaved,
+            });
+        }
+
         toc = nextToc;
         sentCount += updates.length;
+    }
+
+    if (debugExecutionToConsole) {
+        console.log("[DiffZip][SyncExec][Send] done", { sentCount, oversizedFiles });
     }
 
     return { sentCount, oversizedFiles };
