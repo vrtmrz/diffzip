@@ -42,6 +42,12 @@ export class ProgressFragment {
     _wrapperEl?: HTMLDivElement;
 
     /**
+     * Largest note area height observed so far.
+     * Keeps note area stable even when note text becomes shorter.
+     */
+    _maxNoteHeight = 0;
+
+    /**
      * The note text displayed below the progress bar.
      */
     _noteText: string = "";
@@ -253,7 +259,17 @@ export class ProgressFragment {
      * Computes and sets the minimum width and height of the wrapper based on content.
      */
     computeMaxWidth() {
-        // Keep layout sizing in CSS classes to avoid runtime min-width inflation.
+        // Keep note area from shrinking once it has expanded.
+        if (!this._noteEl) return;
+        if (this._maxNoteHeight > 0) {
+            this._noteEl.style.minHeight = `${this._maxNoteHeight}px`;
+        }
+        const measured = Math.max(this._noteEl.scrollHeight, this._noteEl.offsetHeight);
+        if (measured <= 0) return;
+        if (measured > this._maxNoteHeight) {
+            this._maxNoteHeight = measured;
+            this._noteEl.style.minHeight = `${this._maxNoteHeight}px`;
+        }
     }
 
     /**

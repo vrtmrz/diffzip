@@ -123,6 +123,54 @@
 	padding-top: 0.75em;
 }
 
+.diffzip-restore-controls {
+	justify-content: space-between;
+	flex-wrap: wrap;
+}
+
+.diffzip-restore-search {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.diffzip-restore-search input {
+	min-width: min(28rem, 70vw);
+}
+
+.diffzip-restore-selected-count {
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.diffzip-restore-table .col-rev {
+	width: 22em;
+}
+
+.diffzip-restore-table .col-rev select {
+	max-width: 100%;
+}
+
+.diffzip-restore-empty {
+	color: var(--text-muted);
+}
+
+.diffzip-restore-options {
+	gap: 1em;
+	align-items: end;
+	flex-wrap: wrap;
+}
+
+.diffzip-restore-options label {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3em;
+}
+
+.diffzip-restore-prefix input {
+	min-width: 14em;
+}
+
 /* Sync progress dialog */
 .diffzip-sync-progress-dialog {
 	display: flex;
@@ -232,6 +280,11 @@
 .diffzip-sync-table .col-mod {
 	grid-column: 1 / -1;
 	font-size: 0.8em;
+}
+
+.diffzip-restore-table .col-rev {
+	grid-column: 1 / -1;
+	font-size: 0.85em;
 }
 
 .diffzip-sync-table .col-zip::before {
