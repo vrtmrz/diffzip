@@ -41,3 +41,14 @@ export function humanReadableSize(bytes: number): string {
     const rounded = value >= 10 ? value.toFixed(1) : value.toFixed(2);
     return `${rounded.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1")} ${units[unitIndex]}`;
 }
+
+export function ellipsisMiddle(text: string, maxLength: number = 60) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+    const ellipsis = "...";
+    const charsToShow = maxLength - ellipsis.length;
+    const start = Math.ceil(charsToShow / 2);
+    const end = text.length - Math.floor(charsToShow / 2);
+    return text.slice(0, start) + ellipsis + text.slice(end);
+}
