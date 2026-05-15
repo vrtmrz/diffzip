@@ -77,7 +77,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         let n: NoticeWithTimer | undefined = undefined;
         if (key in this.messages) {
             n = this.messages[key];
-            clearTimeout(n.timer);
+            window.clearTimeout(n.timer);
             if (!n.notice.noticeEl.isShown()) {
                 delete this.messages[key];
             } else {
@@ -89,7 +89,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 notice: new Notice(message, 0),
             };
         }
-        n.timer = setTimeout(() => {
+        n.timer = window.setTimeout(() => {
             n?.notice?.hide();
         }, 5000);
         this.messages[key] = n;
@@ -98,12 +98,12 @@ export default class DiffZipBackupPlugin extends Plugin {
     hideMessage(key: string) {
         const n = this.messages[key];
         if (n) {
-            clearTimeout(n.timer);
+            window.clearTimeout(n.timer);
             n.notice.hide();
             delete this.messages[key];
         }
     }
-    logWrite(message: string, key?: string) {
+    logWrite(message: string, _key?: string) {
         const dt = new Date().toLocaleString();
         console.log(`${dt}\t${message}`);
     }
@@ -202,7 +202,6 @@ export default class DiffZipBackupPlugin extends Plugin {
         const makeZipName = (batchIndex: number) =>
             batchIndex === 0 ? baseFileName : baseFileName.replace(/\.zip$/, `-${batchIndex + 1}.zip`);
 
-        let progressDialog: SyncProgressDialog | undefined;
         let cancelRequested = false;
         const cancelledError = new Error("Sync cancelled");
         const fragmentOption = {
@@ -242,7 +241,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         ]);
         const buildProgressContent = () => combinedFragment.rebuildFragment();
 
-        progressDialog = new SyncProgressDialog(this.app, {
+        const progressDialog = new SyncProgressDialog(this.app, {
             title: "Creating Differential Backup",
             content: buildProgressContent(),
             onCancel: () => {
