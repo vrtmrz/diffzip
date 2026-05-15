@@ -274,191 +274,210 @@ export default class DiffZipBackupPlugin extends Plugin {
             }
         };
 
-        // ── Phase 1: detect missing files ────────────────────────────────
-        const missingUpdates: TocUpdate[] = [];
-        missingFileProgress.total = Object.keys(toc).length;
-        for (const [filename, fileInfo] of Object.entries(toc)) {
-            throwIfCancelled();
-            try {
-                if (fileInfo.missing) continue;
-                if (!(await this.vaultAccess.isFileExists(this.vaultAccess.normalizePath(filename)))) {
-                    if (skipDeleted) continue;
-                    log(`File ${filename} is missing`);
-                    missingUpdates.push({ kind: "missing", filename, modifiedTime: today.getTime() });
-                }
-            } finally {
-                missingFileProgress.value++;
-            }
-        }
-
-        // ── Phase 2: scan vault for changed files ─────────────────────────
-        type PrepFile = { filename: string; content: Uint8Array; digest: string; mtime: number; size: number };
-        const changedFiles: PrepFile[] = [];
-        const normalFiles = allFiles.filter(
-            (e) => !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
-        );
-        checkingProgress.total = normalFiles.length;
-        let processed = 0;
-        for (const path of normalFiles) {
-            throwIfCancelled();
-            try {
-                processed++;
-                checkingProgress.note = `Processing ${ellipsisMiddle(path)}`;
-                const stat = await this.vaultAccess.stat(path);
-                throwIfCancelled();
-                if (!stat) {
-                    this.logMessage(`Archiving: Could not read stat ${path}`);
-                    continue;
-                }
-                if (onlyNew && path in toc && stat.mtime <= toc[path].mtime) {
-                    this.logWrite(`${path} older than the last backup, skipping`);
-                    continue;
-                }
-                const content = await this.vaultAccess.readBinary(path);
-                if (!content) {
-                    this.logMessage(`Archiving: Could not read ${path}`);
-                    continue;
-                }
-                const f = new Uint8Array(content);
-                const digest = await computeDigest(f);
-                if (path in toc && toc[path].digest === digest) {
-                    this.logWrite(`${path} Not changed`);
-                    continue;
-                }
-                changedFiles.push({ filename: path, content: f, digest, mtime: stat.mtime, size: f.byteLength });
-            } finally {
-                checkingProgress.value++;
-            }
-        }
-
-        if (changedFiles.length === 0 && missingUpdates.length === 0) {
-            fileProcessingProgress.isCancelled = true;
+        const finishCancelled = () => {
+            missingFileProgress.isCancelled = true;
             checkingProgress.isCancelled = true;
+            fileProcessingProgress.isCancelled = true;
             fileArchivedProgress.isCancelled = true;
-            uploadingProgress.note = `No files have been changed. \nSkipping ZIP generation...`;
+            uploadingProgress.note = "Cancelled.";
             uploadingProgress.isCancelled = true;
-            progressDialog?.finish("No files have been changed.");
-            return;
-        }
+            progressDialog?.finish("Backup cancelled.");
+            this.logMessage("Backup cancelled.", key);
+        };
 
-        // ── Phase 3: plan batches ────────────────────────────────────────
-        const maxTotalSizeInZip =
-            this.settings.maxTotalSizeInZip > 0 ? this.settings.maxTotalSizeInZip * 1024 * 1024 : 0;
-        const { batches, oversizedFiles } = planSendBatches(
-            changedFiles.map((f) => ({ filename: f.filename, size: f.size })),
-            this.settings.maxFilesInZip,
-            maxTotalSizeInZip
-        );
-        if (oversizedFiles.length > 0) {
-            const oversizedList = oversizedFiles
-                .map((filename) => {
-                    const file = changedFiles.find((entry) => entry.filename === filename);
-                    return file ? `${filename} (${humanReadableSize(file.size)})` : filename;
-                })
-                .join(", ");
-            log(`⚠️ Oversized files placed in solo ZIPs: ${oversizedList}`);
-        }
-        const fileByPath = new Map(changedFiles.map((f) => [f.filename, f]));
-        const effectiveBatches = batches.length > 0 ? batches : [{ files: [], totalSize: 0 }];
-
-        // ── Phase 4: write batches ───────────────────────────────────────
-        let currentToc = toc;
-        let totalZipped = 0;
         try {
-            fileArchivedProgress.total = changedFiles.length;
-            fileArchivedProgress.value = 0;
-            for (let batchIndex = 0; batchIndex < effectiveBatches.length; batchIndex++) {
+            // ── Phase 1: detect missing files ────────────────────────────────
+            const missingUpdates: TocUpdate[] = [];
+            missingFileProgress.total = Object.keys(toc).length;
+            for (const [filename, fileInfo] of Object.entries(toc)) {
                 throwIfCancelled();
-                const batch = effectiveBatches[batchIndex];
-                const zipName = makeZipName(batchIndex);
-                const processedAt = today.getTime();
-
-                const updates: TocUpdate[] = [];
-                if (batchIndex === 0) updates.push(...missingUpdates);
-
-                const zippedFiles: { filename: string; content: Uint8Array; mtime: number }[] = [];
-                for (const planned of batch.files) {
-                    const f = fileByPath.get(planned.filename)!;
-                    updates.push({ kind: "file", filename: f.filename, digest: f.digest, mtime: f.mtime });
-                    zippedFiles.push({ filename: f.filename, content: f.content, mtime: f.mtime });
-                }
-
-                const nextToc = applySendBatchToToc(currentToc, updates, zipName, processedAt);
-
-                // Build ZIP with per-file Archiver progress
-                const zip = new Archiver();
-                fileProcessingProgress.isCancelled = false;
-                for (const file of zippedFiles) {
-                    throwIfCancelled();
-                    fileArchivedProgress.note = `Archiving: ${ellipsisMiddle(file.filename)}`;
-                    zip.addFile(file.content, file.filename, { mtime: file.mtime }, (prog, total, finished) => {
-                        if (!finished) {
-                            fileProcessingProgress.note = `Archiving: ${ellipsisMiddle(file.filename)}`;
-                            fileProcessingProgress.total = total;
-                            fileProcessingProgress.value = prog;
-                        } else {
-                            fileArchivedProgress.value++;
-                            fileArchivedProgress.note = `Archived: ${ellipsisMiddle(file.filename)}`;
-                            fileProcessingProgress.note = "";
-                            fileProcessingProgress.isCancelled = true;
-                            fileProcessingProgress.total = 0;
-                            fileProcessingProgress.value = 0;
-                        }
-                    });
-                }
-                throwIfCancelled();
-                zip.addTextFile(`\`\`\`\n${stringifyYaml(nextToc)}\n\`\`\`\n`, InfoFile, { mtime: Date.now() });
-
-                throwIfCancelled();
-                const buf = await zip.finalize();
-                uploadingProgress.total = buf.byteLength;
-                uploadingProgress.value = 0;
-
-                const step =
-                    this.settings.maxSize / 1 == 0 ? buf.byteLength + 1 : (this.settings.maxSize / 1) * 1024 * 1024;
-                let pieceCount = buf.byteLength > step ? 1 : 0;
-                for (const chunk of pieces(buf, step)) {
-                    throwIfCancelled();
-                    const outZipFile = this.backups.normalizePath(
-                        `${this.backupFolder}${this.sep}${zipName}${pieceCount === 0 ? "" : "." + `00${pieceCount}`.slice(-3)}`
-                    );
-                    pieceCount++;
-                    uploadingProgress.note = `Committing ${ellipsisMiddle(outZipFile)}`;
-                    if (!(await this.backups.writeBinary(outZipFile, toArrayBuffer(chunk)))) {
-                        throw new Error(`Creating ${outZipFile} has been failed!`);
+                try {
+                    if (fileInfo.missing) continue;
+                    if (!(await this.vaultAccess.isFileExists(this.vaultAccess.normalizePath(filename)))) {
+                        if (skipDeleted) continue;
+                        log(`File ${filename} is missing`);
+                        missingUpdates.push({ kind: "missing", filename, modifiedTime: today.getTime() });
                     }
-                    uploadingProgress.value += chunk.byteLength;
+                } finally {
+                    missingFileProgress.value++;
                 }
-
-                const tocFilePath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
-                throwIfCancelled();
-                if (
-                    !(await this.backups.writeTOC(
-                        tocFilePath,
-                        toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(nextToc)}\n\`\`\`\n`))
-                    ))
-                ) {
-                    throw new Error(`Updating TOC has been failed!`);
-                }
-                log(
-                    `Backup batch ${batchIndex + 1}/${effectiveBatches.length} written (${batch.files.length} files)`,
-                    key
-                );
-                currentToc = nextToc;
-                totalZipped += batch.files.length;
             }
-            this.logMessage(
-                `${processed} of ${normalFiles.length} files checked, ${totalZipped} zipped in ${effectiveBatches.length} batch(es).`,
-                key
+
+            // ── Phase 2: scan vault for changed files ─────────────────────────
+            type PrepFile = { filename: string; content: Uint8Array; digest: string; mtime: number; size: number };
+            const changedFiles: PrepFile[] = [];
+            const normalFiles = allFiles.filter(
+                (e) =>
+                    !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
             );
-        } catch (e) {
-            if (e === cancelledError) {
-                uploadingProgress.note = "Cancelled.";
-                progressDialog?.finish("Backup cancelled.");
-                this.logMessage("Backup cancelled.", key);
+            checkingProgress.total = normalFiles.length;
+            let processed = 0;
+            for (const path of normalFiles) {
+                throwIfCancelled();
+                try {
+                    processed++;
+                    checkingProgress.note = `Processing ${ellipsisMiddle(path)}`;
+                    const stat = await this.vaultAccess.stat(path);
+                    throwIfCancelled();
+                    if (!stat) {
+                        this.logMessage(`Archiving: Could not read stat ${path}`);
+                        continue;
+                    }
+                    if (onlyNew && path in toc && stat.mtime <= toc[path].mtime) {
+                        this.logWrite(`${path} older than the last backup, skipping`);
+                        continue;
+                    }
+                    const content = await this.vaultAccess.readBinary(path);
+                    if (!content) {
+                        this.logMessage(`Archiving: Could not read ${path}`);
+                        continue;
+                    }
+                    const f = new Uint8Array(content);
+                    const digest = await computeDigest(f);
+                    if (path in toc && toc[path].digest === digest) {
+                        this.logWrite(`${path} Not changed`);
+                        continue;
+                    }
+                    changedFiles.push({ filename: path, content: f, digest, mtime: stat.mtime, size: f.byteLength });
+                } finally {
+                    checkingProgress.value++;
+                }
+            }
+
+            if (changedFiles.length === 0 && missingUpdates.length === 0) {
+                fileProcessingProgress.isCancelled = true;
+                checkingProgress.isCancelled = true;
+                fileArchivedProgress.isCancelled = true;
+                uploadingProgress.note = `No files have been changed. \nSkipping ZIP generation...`;
+                uploadingProgress.isCancelled = true;
+                progressDialog?.finish("No files have been changed.");
                 return;
             }
-            this.logMessage(`Something went wrong while processing ${processed} files, ${totalZipped} zipped`, key);
+
+            // ── Phase 3: plan batches ────────────────────────────────────────
+            const maxTotalSizeInZip =
+                this.settings.maxTotalSizeInZip > 0 ? this.settings.maxTotalSizeInZip * 1024 * 1024 : 0;
+            const { batches, oversizedFiles } = planSendBatches(
+                changedFiles.map((f) => ({ filename: f.filename, size: f.size })),
+                this.settings.maxFilesInZip,
+                maxTotalSizeInZip
+            );
+            if (oversizedFiles.length > 0) {
+                const oversizedList = oversizedFiles
+                    .map((filename) => {
+                        const file = changedFiles.find((entry) => entry.filename === filename);
+                        return file ? `${filename} (${humanReadableSize(file.size)})` : filename;
+                    })
+                    .join(", ");
+                log(`⚠️ Oversized files placed in solo ZIPs: ${oversizedList}`);
+            }
+            const fileByPath = new Map(changedFiles.map((f) => [f.filename, f]));
+            const effectiveBatches = batches.length > 0 ? batches : [{ files: [], totalSize: 0 }];
+
+            // ── Phase 4: write batches ───────────────────────────────────────
+            let currentToc = toc;
+            let totalZipped = 0;
+            try {
+                fileArchivedProgress.total = changedFiles.length;
+                fileArchivedProgress.value = 0;
+                for (let batchIndex = 0; batchIndex < effectiveBatches.length; batchIndex++) {
+                    throwIfCancelled();
+                    const batch = effectiveBatches[batchIndex];
+                    const zipName = makeZipName(batchIndex);
+                    const processedAt = today.getTime();
+
+                    const updates: TocUpdate[] = [];
+                    if (batchIndex === 0) updates.push(...missingUpdates);
+
+                    const zippedFiles: { filename: string; content: Uint8Array; mtime: number }[] = [];
+                    for (const planned of batch.files) {
+                        const f = fileByPath.get(planned.filename)!;
+                        updates.push({ kind: "file", filename: f.filename, digest: f.digest, mtime: f.mtime });
+                        zippedFiles.push({ filename: f.filename, content: f.content, mtime: f.mtime });
+                    }
+
+                    const nextToc = applySendBatchToToc(currentToc, updates, zipName, processedAt);
+
+                    // Build ZIP with per-file Archiver progress
+                    const zip = new Archiver();
+                    fileProcessingProgress.isCancelled = false;
+                    for (const file of zippedFiles) {
+                        throwIfCancelled();
+                        fileArchivedProgress.note = `Archiving: ${ellipsisMiddle(file.filename)}`;
+                        zip.addFile(file.content, file.filename, { mtime: file.mtime }, (prog, total, finished) => {
+                            if (!finished) {
+                                fileProcessingProgress.note = `Archiving: ${ellipsisMiddle(file.filename)}`;
+                                fileProcessingProgress.total = total;
+                                fileProcessingProgress.value = prog;
+                            } else {
+                                fileArchivedProgress.value++;
+                                fileArchivedProgress.note = `Archived: ${ellipsisMiddle(file.filename)}`;
+                                fileProcessingProgress.note = "";
+                                fileProcessingProgress.isCancelled = true;
+                                fileProcessingProgress.total = 0;
+                                fileProcessingProgress.value = 0;
+                            }
+                        });
+                    }
+                    throwIfCancelled();
+                    zip.addTextFile(`\`\`\`\n${stringifyYaml(nextToc)}\n\`\`\`\n`, InfoFile, { mtime: Date.now() });
+
+                    throwIfCancelled();
+                    const buf = await zip.finalize();
+                    uploadingProgress.total = buf.byteLength;
+                    uploadingProgress.value = 0;
+
+                    const step =
+                        this.settings.maxSize / 1 == 0 ? buf.byteLength + 1 : (this.settings.maxSize / 1) * 1024 * 1024;
+                    let pieceCount = buf.byteLength > step ? 1 : 0;
+                    for (const chunk of pieces(buf, step)) {
+                        throwIfCancelled();
+                        const outZipFile = this.backups.normalizePath(
+                            `${this.backupFolder}${this.sep}${zipName}${pieceCount === 0 ? "" : "." + `00${pieceCount}`.slice(-3)}`
+                        );
+                        pieceCount++;
+                        uploadingProgress.note = `Committing ${ellipsisMiddle(outZipFile)}`;
+                        if (!(await this.backups.writeBinary(outZipFile, toArrayBuffer(chunk)))) {
+                            throw new Error(`Creating ${outZipFile} has been failed!`);
+                        }
+                        uploadingProgress.value += chunk.byteLength;
+                    }
+
+                    const tocFilePath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${InfoFile}`);
+                    throwIfCancelled();
+                    if (
+                        !(await this.backups.writeTOC(
+                            tocFilePath,
+                            toArrayBuffer(new TextEncoder().encode(`\`\`\`\n${stringifyYaml(nextToc)}\n\`\`\`\n`))
+                        ))
+                    ) {
+                        throw new Error(`Updating TOC has been failed!`);
+                    }
+                    log(
+                        `Backup batch ${batchIndex + 1}/${effectiveBatches.length} written (${batch.files.length} files)`,
+                        key
+                    );
+                    currentToc = nextToc;
+                    totalZipped += batch.files.length;
+                }
+                this.logMessage(
+                    `${processed} of ${normalFiles.length} files checked, ${totalZipped} zipped in ${effectiveBatches.length} batch(es).`,
+                    key
+                );
+            } catch (e) {
+                if (e === cancelledError) {
+                    finishCancelled();
+                    return;
+                }
+                this.logMessage(`Something went wrong while processing ${processed} files, ${totalZipped} zipped`, key);
+                this.logWrite(e instanceof Error ? e.message : String(e), key);
+            }
+        } catch (e) {
+            if (e === cancelledError) {
+                finishCancelled();
+                return;
+            }
+            this.logMessage("Something went wrong before archiving started", key);
             this.logWrite(e instanceof Error ? e.message : String(e), key);
         }
     }
