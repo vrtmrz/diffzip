@@ -194,6 +194,49 @@
 }
 
 /* Generic progress fragment */
+.diffzip-progress-notice {
+	display: flex;
+	flex-direction: column;
+	width: min(42rem, calc(100vw - 4rem));
+	max-width: calc(100vw - 4rem);
+	min-width: 0;
+	box-sizing: border-box;
+	overflow-x: hidden;
+}
+
+.notice .notice-message:has(.diffzip-progress-notice) {
+	display: flex;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.diffzip-progress-notice .diffzip-progress-wrap {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	max-width: none;
+	min-width: 0;
+}
+
+.diffzip-progress-notice .diffzip-progress-title-line,
+.diffzip-progress-notice .diffzip-progress-title,
+.diffzip-progress-notice .diffzip-progress-note,
+.diffzip-progress-notice .diffzip-progress-numeric {
+	min-width: 0;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+
+.diffzip-progress-notice .diffzip-progress-bar {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+}
+
 .diffzip-progress-wrap {
 	width: 100%;
 	max-width: min(90vw, 42rem);
@@ -232,6 +275,27 @@
 	word-break: break-word;
 	min-height: 1.2em;
 	color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+	.diffzip-progress-notice {
+		width: calc(100vw - 3.5rem);
+		max-width: calc(100vw - 3.5rem);
+	}
+
+	.diffzip-progress-notice .diffzip-progress-title-line {
+		flex-wrap: wrap;
+	}
+
+	.diffzip-progress-notice .diffzip-progress-title {
+		flex: 1 1 100%;
+	}
+
+	.diffzip-progress-notice .diffzip-progress-numeric {
+		margin-left: 0;
+		width: 100%;
+		text-align: right;
+	}
 }
 
 .diffzip-sync-table thead {

@@ -22,11 +22,7 @@ import {
     type FileInfos,
     type NoticeWithTimer,
 } from "./src/types.ts";
-import {
-    applySendBatchToToc,
-    planSendBatches,
-    type TocUpdate,
-} from "./src/SyncPlanner.ts";
+import { applySendBatchToToc, planSendBatches, type TocUpdate } from "./src/SyncPlanner.ts";
 import { DiffZipSettingTab } from "./src/DiffZipSettingTab.ts";
 import { ProgressFragment } from "./src/ProgressFragment.ts";
 import { CombinedFragment } from "./src/CombinedFragment.ts";
@@ -182,7 +178,12 @@ export default class DiffZipBackupPlugin extends Plugin {
                     }, 1000);
                 },
             });
-            const notice = new Notice(progress.fragment, 0);
+            const noticeFragment = activeDocument.createDocumentFragment();
+            const noticeContainer = activeDocument.createElement("div");
+            noticeContainer.classList.add("diffzip-progress-notice");
+            noticeContainer.appendChild(progress.fragment);
+            noticeFragment.appendChild(noticeContainer);
+            const notice = new Notice(noticeFragment, 0);
             return (await this.getFiles("", ignores, progress)).filter((e) => !e.startsWith(".trash/"));
         }
         return this.app.vault.getFiles().map((e) => e.path);
@@ -294,9 +295,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         type PrepFile = { filename: string; content: Uint8Array; digest: string; mtime: number; size: number };
         const changedFiles: PrepFile[] = [];
         const normalFiles = allFiles.filter(
-            (e) =>
-                !e.startsWith(this.backupFolder + this.sep) &&
-                !e.startsWith(this.settings.restoreFolder + this.sep)
+            (e) => !e.startsWith(this.backupFolder + this.sep) && !e.startsWith(this.settings.restoreFolder + this.sep)
         );
         checkingProgress.total = normalFiles.length;
         let processed = 0;
@@ -441,7 +440,10 @@ export default class DiffZipBackupPlugin extends Plugin {
                 ) {
                     throw new Error(`Updating TOC has been failed!`);
                 }
-                log(`Backup batch ${batchIndex + 1}/${effectiveBatches.length} written (${batch.files.length} files)`, key);
+                log(
+                    `Backup batch ${batchIndex + 1}/${effectiveBatches.length} written (${batch.files.length} files)`,
+                    key
+                );
                 currentToc = nextToc;
                 totalZipped += batch.files.length;
             }
@@ -563,10 +565,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -727,10 +729,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -846,9 +848,9 @@ export default class DiffZipBackupPlugin extends Plugin {
         const detailFiles = `<details>
 
 ${[...zipFileMap.entries()]
-                .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
-                .sort((a, b) => a.localeCompare(b))
-                .join("")}
+    .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
+    .sort((a, b) => a.localeCompare(b))
+    .join("")}
 
 
 </details>`;
