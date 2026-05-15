@@ -207,7 +207,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         const fragmentOption = {
             total: 0,
             onComplete: () => onCloseProgress(),
-            onProgress: () => { },
+            onProgress: () => {},
         } as const;
 
         const missingFileProgress = new ProgressFragment({
@@ -303,7 +303,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 log,
                 this.sep,
                 this.settings,
-                today,
+                today
             );
             const plannedGen = planBatches(detectGen, this.settings.maxFilesInZip, maxTotalSizeInZip);
 
@@ -333,8 +333,7 @@ export default class DiffZipBackupPlugin extends Plugin {
 
                     uploadingProgress.total = buf.byteLength;
                     uploadingProgress.value = 0;
-                    const step =
-                        this.settings.maxSize === 0 ? buf.byteLength + 1 : this.settings.maxSize * 1024 * 1024;
+                    const step = this.settings.maxSize === 0 ? buf.byteLength + 1 : this.settings.maxSize * 1024 * 1024;
                     let pieceCount = buf.byteLength > step ? 1 : 0;
                     for (const chunk of pieces(buf, step)) {
                         throwIfCancelled();
@@ -489,10 +488,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -653,10 +652,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             howToRestore == RESTORE_OVERWRITE
                 ? selected
                 : howToRestore == RESTORE_TO_RESTORE_FOLDER
-                    ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
-                    : howToRestore == RESTORE_WITH_SUFFIX
-                        ? `${selectedWithoutExt}-${suffix}.${ext}`
-                        : "";
+                  ? this.vaultAccess.normalizePath(`${this.settings.restoreFolder}${this.sep}${selected}`)
+                  : howToRestore == RESTORE_WITH_SUFFIX
+                    ? `${selectedWithoutExt}-${suffix}.${ext}`
+                    : "";
         if (!restoreAs) {
             return;
         }
@@ -772,9 +771,9 @@ export default class DiffZipBackupPlugin extends Plugin {
         const detailFiles = `<details>
 
 ${[...zipFileMap.entries()]
-                .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
-                .sort((a, b) => a.localeCompare(b))
-                .join("")}
+    .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
+    .sort((a, b) => a.localeCompare(b))
+    .join("")}
 
 
 </details>`;
@@ -919,4 +918,3 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         await this.saveData(this.settings);
     }
 }
-

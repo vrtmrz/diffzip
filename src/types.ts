@@ -67,7 +67,7 @@ export type FileInfo = {
 export type FileInfos = Record<string, FileInfo>;
 export type NoticeWithTimer = {
     notice: Notice;
-    timer?: ReturnType<typeof setTimeout>;
+    timer?: ReturnType<typeof setTimeout> | number;
 };
 
 
