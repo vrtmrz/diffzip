@@ -1,4 +1,4 @@
-import type { XByteArray, XDataView } from "./types.ts";
+import type { XByteArray } from "./types.ts";
 
 export function* pieces(source: XByteArray, chunkSize: number): Generator<Uint8Array<ArrayBuffer>, void, void> {
     let offset = 0;

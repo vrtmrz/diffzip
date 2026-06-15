@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-deprecated */
+// deno-lint-ignore-file
 // This file is based on a file that was published by the @remotely-save, under the Apache 2 License.
 // I would love to express my deepest gratitude to the original authors for their hard work and dedication. Without their contributions, this project would not have been possible.
 //
@@ -27,7 +33,6 @@ export class ObsHttpHandler extends FetchHttpHandler {
         this.requestTimeoutInMs = options === undefined ? undefined : options.requestTimeout;
         this.reverseProxyNoSignUrl = reverseProxyNoSignUrl;
     }
-    // eslint-disable-next-line require-await
     async handle(request: HttpRequest, { abortSignal }: HttpHandlerOptions = {}): Promise<{ response: HttpResponse }> {
         if (abortSignal?.aborted) {
             const abortError = new Error("Request aborted");

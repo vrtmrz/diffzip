@@ -114,17 +114,32 @@ export class MessageBox extends Modal {
         const { contentEl } = this;
         this.titleEl.setText(this.title);
         const div = contentEl.createDiv();
-        div.style.userSelect = "text";
+        div.setCssStyles({
+            userSelect: "text",
+        })
         void MarkdownRenderer.render(this.plugin.app, this.contentMd, div, "/", this.plugin);
         const buttonSetting = new Setting(contentEl);
 
-        buttonSetting.infoEl.style.display = "none";
-        buttonSetting.controlEl.style.flexWrap = "wrap";
+        // buttonSetting.infoEl.style.display = "none";
+        buttonSetting.infoEl.setCssStyles({
+            display: "none",
+        });
+        // buttonSetting.controlEl.style.flexWrap = "wrap";
+        buttonSetting.controlEl.setCssStyles({
+            flexWrap: "wrap",
+        });
+
         if (this.wideButton) {
-            buttonSetting.controlEl.style.flexDirection = "column";
-            buttonSetting.controlEl.style.alignItems = "center";
-            buttonSetting.controlEl.style.justifyContent = "center";
-            buttonSetting.controlEl.style.flexGrow = "1";
+                // buttonSetting.controlEl.style.flexDirection = "column";
+                // buttonSetting.controlEl.style.alignItems = "center";
+                // buttonSetting.controlEl.style.justifyContent = "center";
+                // buttonSetting.controlEl.style.flexGrow = "1";
+            buttonSetting.controlEl.setCssStyles({
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                flexGrow: "1",
+            });
         }
 
         for (const button of this.buttons) {
@@ -139,8 +154,12 @@ export class MessageBox extends Modal {
                     btn.setCta();
                 }
                 if (this.wideButton) {
-                    btn.buttonEl.style.flexGrow = "1";
-                    btn.buttonEl.style.width = "100%";
+                    // btn.buttonEl.style.flexGrow = "1";
+                    // btn.buttonEl.style.width = "100%";
+                    btn.buttonEl.setCssStyles({
+                        flexGrow: "1",
+                        width: "100%",
+                    });
                 }
                 return btn;
             });
@@ -202,6 +221,7 @@ export class PopOverSelectString extends FuzzySuggestModal<string> {
     }
 
     onClose(): void {
+        // deno-lint-ignore no-window-prefix no-window
         window.setTimeout(() => {
             if (this.callback != undefined) {
                 this.callback("");

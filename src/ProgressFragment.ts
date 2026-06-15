@@ -2,6 +2,7 @@
  * Represents a UI fragment for displaying and controlling progress.
  * Provides properties and methods to update progress, label, note, and completion state.
  */
+// deno-lint-ignore-file adjacent-overload-signatures no-window-prefix no-window
 export class ProgressFragment {
 
     /**
@@ -302,24 +303,24 @@ export class ProgressFragment {
      * @returns The constructed DocumentFragment.
      */
     constructFragment() {
-        const f = document.createDocumentFragment();
-        const d = document.createElement("div");
+        const f = activeDocument.createDocumentFragment();
+        const d = activeDocument.createElement("div");
         d.classList.add("diffzip-progress-wrap");
-        const titleLine = document.createElement("div");
+        const titleLine = activeDocument.createElement("div");
         titleLine.classList.add("diffzip-progress-title-line");
-        const lbl = document.createElement("label");
+        const lbl = activeDocument.createElement("label");
         lbl.classList.add("diffzip-progress-title");
         this._titleEl = lbl;
-        const numeric = document.createElement("span");
+        const numeric = activeDocument.createElement("span");
         numeric.classList.add("diffzip-progress-numeric");
         this._numericStatusEl = numeric;
         titleLine.appendChild(lbl);
         titleLine.appendChild(numeric);
         d.appendChild(titleLine);
-        const p = document.createElement("progress");
+        const p = activeDocument.createElement("progress");
         p.classList.add("diffzip-progress-bar");
         this._progressEl = p;
-        this._noteEl = document.createElement("span");
+        this._noteEl = activeDocument.createElement("span");
         this._noteEl.classList.add("diffzip-progress-note");
         d.appendChild(p);
         d.appendChild(this._noteEl);

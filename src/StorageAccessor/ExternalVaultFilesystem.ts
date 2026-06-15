@@ -9,6 +9,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     get sep(): string {
         //@ts-ignore internal API
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         return this.app.vault.adapter.path.sep as string;
     }
     get fsPromises(): FsAPI {
@@ -30,6 +31,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     async _writeBinary(fullPath: string, data: ArrayBuffer) {
         try {
+            // eslint-disable-next-line no-undef
             await this.fsPromises.writeFile(fullPath, Buffer.from(data));
             return true;
         } catch (e) {
@@ -68,12 +70,16 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     normalizePath(path: string): string {
         //@ts-ignore internal API
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const f = this.app.vault.adapter.path;
         //@ts-ignore internal API
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const basePath = this.app.vault.adapter.basePath;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         const normalizedPath = f.normalize(path);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         const result = f.resolve(basePath, normalizedPath);
-        return result;
+        return result as string;
     }
 
     async stat(path: string): Promise<false | Stat> {

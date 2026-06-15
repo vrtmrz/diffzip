@@ -405,3 +405,50 @@
 	opacity: 0.75;
 	border-color: var(--text-muted);
 }
+
+/* Tree View in Restore revision selector */
+.diffzip-sync-table tr.diffzip-folder-row {
+	display: flex;
+	align-items: center;
+	padding: 0.3em 0.6em;
+	gap: 0.5em;
+}
+
+.diffzip-folder-row .col-zip,
+.diffzip-folder-row .col-mod,
+.diffzip-folder-row .col-rev {
+	display: none !important;
+}
+
+.diffzip-tree-toggle {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	padding: 2px 6px;
+	cursor: pointer;
+	font-size: 0.8em;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.diffzip-tree-toggle:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.diffzip-tree-icon {
+	margin-right: 4px;
+	user-select: none;
+}
+
+.diffzip-tree-name {
+	font-weight: 500;
+}
+
+.diffzip-tree-count {
+	color: var(--text-muted);
+	font-size: 0.8em;
+	margin-left: 4px;
+}

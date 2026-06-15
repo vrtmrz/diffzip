@@ -45,11 +45,11 @@ export class RestoreDialog extends Modal {
         return await Promise.resolve();
     }
 
-    async onClose() {
+    onClose() {
         if (this.component) {
-            unmount(this.component);
+            void unmount(this.component);
             this.component = undefined;
         }
-        return await Promise.resolve();
+        return super.onClose();
     }
 }
