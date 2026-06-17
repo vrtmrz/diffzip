@@ -3,7 +3,7 @@
  */
 import type DiffZipBackupPlugin from "../main.ts";
 // Because of this is a type-only import.
-// eslint-disable-next-line import/no-nodejs-modules
+// eslint-disable-next-line import/no-nodejs-modules -- type only import of promises
 import type { promises } from "node:fs";
 import { OpenSSLCompat } from "octagonal-wheels/encryption";
 import { NormalVault } from "./StorageAccessor/NormalVault.ts";

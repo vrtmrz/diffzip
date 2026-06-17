@@ -211,6 +211,7 @@ export class SyncRemoteDialog extends Modal {
             total: totalOps,
         });
         const progressNotice = new Notice(progress.fragment, 0);
+        progressNotice.messageEl.classList.add("diffzip-progress-notice-message");
         let done = 0;
 
         const result = await executeFetch(
@@ -220,7 +221,7 @@ export class SyncRemoteDialog extends Modal {
                 deleteLocal: async (filename) => {
                     const abstractFile = this.app.vault.getAbstractFileByPath(filename);
                     if (abstractFile instanceof TFile) {
-                        await this.app.vault.trash(abstractFile, false);
+                        await this.app.fileManager.trashFile(abstractFile);
                     }
                     return true;
                 },

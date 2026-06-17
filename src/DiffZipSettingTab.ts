@@ -16,7 +16,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl("h2", { text: "General" });
+        new Setting(containerEl).setName("Basic").setHeading();
 
         new Setting(containerEl).setName("Start backup at launch").addToggle((toggle) =>
             toggle.setValue(this.plugin.settings.startBackupAtLaunch).onChange(async (value) => {
@@ -59,7 +59,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                 })
             );
 
-        containerEl.createEl("h2", { text: "Backup Destination" });
+        new Setting(containerEl).setName("Backup Destination").setHeading();
         const dropDownRemote: Record<string, string> = {
             "": "Inside the vault",
             desktop: "Anywhere (Desktop only)",
@@ -222,7 +222,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                 );
         }
 
-        containerEl.createEl("h2", { text: "Restore" });
+        new Setting(containerEl).setName("Restore").setHeading();
 
         new Setting(containerEl)
             .setName("Restore folder")
@@ -237,7 +237,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     })
             );
 
-        containerEl.createEl("h2", { text: "Backup ZIP Settings" });
+        new Setting(containerEl).setName("Backup ZIP").setHeading();
         new Setting(containerEl)
             .setName("Max files in a single ZIP")
             .setDesc("(0 to disabled) Limit the number of files in a single ZIP file to better restore performance")
@@ -287,7 +287,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     })
             );
 
-        containerEl.createEl("h2", { text: "Misc" });
+        new Setting(containerEl).setName("Misc").setHeading();
 
         new Setting(containerEl)
             .setName("Reset Backup Information")
@@ -316,7 +316,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     }).inputEl.type = "password")
             );
 
-        containerEl.createEl("h2", { text: "Tools" });
+        new Setting(containerEl).setName("Tools").setHeading();
         let passphrase = "";
         new Setting(containerEl)
             .setName("Passphrase")
@@ -339,7 +339,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                 button.setButtonText("Copy to Clipboard").onClick(async () => {
                     const setting = JSON.stringify(this.plugin.settings);
                     // Compatibility with old versions
-                    // eslint-disable-next-line @typescript-eslint/no-deprecated
+                    // eslint-disable-next-line @typescript-eslint/no-deprecated -- encrypt is deprecated but kept for backwards compatibility
                     const encrypted = await encrypt(setting, passphrase, false);
                     const uri = `obsidian://diffzip/settings?data=${encodeURIComponent(encrypted)}`;
                     await navigator.clipboard.writeText(uri);
@@ -354,7 +354,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
             .addText((text) => {
                 text.setPlaceholder("obsidian://diffzip/settings?data=....")
                     .setValue(copiedURI)
-                    .onChange(async (value) => {
+                    .onChange((value) => {
                         copiedURI = value;
                     });
             })
@@ -366,7 +366,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                     const data = decodeURIComponent(uri.split("?data=")[1]);
                     try {
                         // Compatibility with old versions
-                        // eslint-disable-next-line @typescript-eslint/no-deprecated
+                        // eslint-disable-next-line @typescript-eslint/no-deprecated -- decrypt is deprecated but kept for backwards compatibility
                         const decrypted = await decrypt(data, passphrase, false);
                         const settings = JSON.parse(decrypted) as DiffZipBackupSettings;
                         if (

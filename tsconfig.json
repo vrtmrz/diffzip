@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "baseUrl": ".",
+        // "baseUrl": ".",
         "inlineSourceMap": true,
         "inlineSources": true,
         "module": "ESNext",
@@ -16,6 +16,6 @@
         "noEmit": true,
         "lib": ["DOM", "es2019"]
     },
-    "include": ["**/*.ts"],
+    "include": ["**/*.ts", "**/*.svelte"],
     "exclude": ["**/*.test.ts"]
 }

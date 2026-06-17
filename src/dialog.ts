@@ -6,6 +6,7 @@ import {
     type ButtonComponent,
     MarkdownRenderer,
     FuzzySuggestModal,
+    Component,
 } from "obsidian";
 
 export class InputStringDialog extends Modal {
@@ -90,6 +91,7 @@ export class MessageBox extends Modal {
     wideButton: boolean;
 
     onSubmit: (result: string | false) => void;
+    component: Component = new Component();
 
     constructor(
         plugin: Plugin,
@@ -111,13 +113,14 @@ export class MessageBox extends Modal {
     }
 
     onOpen() {
+        this.component.load();
         const { contentEl } = this;
         this.titleEl.setText(this.title);
         const div = contentEl.createDiv();
         div.setCssStyles({
             userSelect: "text",
         })
-        void MarkdownRenderer.render(this.plugin.app, this.contentMd, div, "/", this.plugin);
+        void MarkdownRenderer.render(this.plugin.app, this.contentMd, div, "/", this.component);
         const buttonSetting = new Setting(contentEl);
 
         // buttonSetting.infoEl.style.display = "none";
@@ -167,6 +170,7 @@ export class MessageBox extends Modal {
     }
 
     onClose() {
+        this.component.unload();
         super.onClose();
         const { contentEl } = this;
         contentEl.empty();

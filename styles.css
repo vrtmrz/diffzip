@@ -1,6 +1,5 @@
 .diffzip-dialog-header {
 	display: flex;
-	flex-direction: row;
 	flex-shrink: 0;
 	flex-direction: column;
 }
@@ -16,7 +15,6 @@
 	border-top: 1px solid var(--background-modifier-border);
 	padding-top: 0.75em;
 	display: flex;
-	flex-direction: row;
 	flex-shrink: 0;
 	flex-direction: column;
 }
@@ -204,7 +202,7 @@
 	overflow-x: hidden;
 }
 
-.notice .notice-message:has(.diffzip-progress-notice) {
+.diffzip-progress-notice-message {
 	display: flex;
 	flex: 1 1 auto;
 	min-width: 0;
@@ -363,7 +361,9 @@
 
 /* Radio action selector */
 .action-radio-group {
-	all: unset;
+	border: none;
+	margin: 0;
+	padding: 0;
 	display: flex;
 	gap: 0.4em;
 	align-items: center;
@@ -414,10 +414,10 @@
 	gap: 0.5em;
 }
 
-.diffzip-folder-row .col-zip,
-.diffzip-folder-row .col-mod,
-.diffzip-folder-row .col-rev {
-	display: none !important;
+.diffzip-sync-table tr.diffzip-folder-row .col-zip,
+.diffzip-sync-table tr.diffzip-folder-row .col-mod,
+.diffzip-sync-table tr.diffzip-folder-row .col-rev {
+	display: none;
 }
 
 .diffzip-tree-toggle {

@@ -13,6 +13,7 @@ export class NormalVault extends StorageAccessor {
     }
 
     async checkType(path: string): Promise<FileType> {
+        await Promise.resolve();
         const af = this.app.vault.getAbstractFileByPath(path);
         if (af == null) return FileType.Missing;
         if (af instanceof TFile) return FileType.File;
@@ -48,7 +49,7 @@ export class NormalVault extends StorageAccessor {
             const af = this.app.vault.getAbstractFileByPath(path);
             if (af == null) return true;
             if (af instanceof TFile) {
-                await this.app.vault.delete(af, true);
+                await this.app.fileManager.trashFile(af);
                 return true;
             }
             return false;
@@ -59,6 +60,7 @@ export class NormalVault extends StorageAccessor {
     }
 
     async stat(path: string): Promise<false | Stat> {
+        await Promise.resolve();
         const af = this.app.vault.getAbstractFileByPath(path);
         if (af == null) return false;
         if (af instanceof TFile) {

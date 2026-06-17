@@ -1,6 +1,6 @@
 {
     "name": "diffzip",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "description": "Differential ZIP Backup",
     "main": "main.js",
     "scripts": {
@@ -19,6 +19,7 @@
     "license": "MIT",
     "devDependencies": {
         "@aws-sdk/client-s3": "^3.726.1",
+        "@dword-design/eslint-plugin-import-alias": "^8.1.8",
         "@smithy/fetch-http-handler": "^5.0.1",
         "@smithy/protocol-http": "^5.0.1",
         "@smithy/querystring-builder": "^4.0.1",
@@ -26,16 +27,17 @@
         "@types/node": "^22.19.19",
         "@typescript-eslint/eslint-plugin": "8.56.1",
         "@typescript-eslint/parser": "^8.56.1",
-        "builtin-modules": "4.0.0",
         "esbuild": "0.28.1",
         "esbuild-svelte": "^0.9.5",
         "eslint": "^9.39.3",
         "eslint-plugin-obsidianmd": "^0.3.0",
         "eslint-plugin-svelte": "^3.15.0",
+        "globals": "^14.0.0",
         "obsidian": "^1.8.7",
         "prettier": "^3.5.3",
         "svelte": "^5.1.15",
         "svelte-check": "^4.0.7",
+        "svelte-eslint-parser": "^1.8.0",
         "svelte-preprocess": "^6.0.3",
         "tslib": "2.8.1",
         "typescript": "5.7.3"

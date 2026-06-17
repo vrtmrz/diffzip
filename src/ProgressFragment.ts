@@ -99,7 +99,7 @@ export class ProgressFragment {
     set collapsed(value: boolean) {
         this._isCollapsed = value;
         if (this._wrapperEl) {
-            this._wrapperEl.style.display = value ? "none" : "block";
+            this._wrapperEl.setCssStyles({ display: value ? "none" : "block" });
         }
     }
 
@@ -263,13 +263,13 @@ export class ProgressFragment {
         // Keep note area from shrinking once it has expanded.
         if (!this._noteEl) return;
         if (this._maxNoteHeight > 0) {
-            this._noteEl.style.minHeight = `${this._maxNoteHeight}px`;
+            this._noteEl.setCssStyles({ minHeight: `${this._maxNoteHeight}px` });
         }
         const measured = Math.max(this._noteEl.scrollHeight, this._noteEl.offsetHeight);
         if (measured <= 0) return;
         if (measured > this._maxNoteHeight) {
             this._maxNoteHeight = measured;
-            this._noteEl.style.minHeight = `${this._maxNoteHeight}px`;
+            this._noteEl.setCssStyles({ minHeight: `${this._maxNoteHeight}px` });
         }
     }
 

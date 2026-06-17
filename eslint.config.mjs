@@ -3,6 +3,10 @@ import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
 import { defineConfig, globalIgnores } from "eslint/config";
 import * as sveltePlugin from "eslint-plugin-svelte";
+import svelteParser from "svelte-eslint-parser";
+import importAlias from "@dword-design/eslint-plugin-import-alias";
+import { baseRules, ImportAliasRules, obsidianRules } from "./eslint.config.common.mjs";
+
 export default defineConfig([
     globalIgnores([
         "node_modules",
@@ -13,13 +17,18 @@ export default defineConfig([
         "version-bump.mjs",
         "versions.json",
         "main.js",
-		"**/*.test.ts",
+        "**/*.test.ts",
     ]),
+    {
+        linterOptions: {
+            reportUnusedDisableDirectives: "off",
+        },
+    },
     ...sveltePlugin.configs["flat/base"],
     ...obsidianmd.configs.recommended,
+    importAlias.configs.recommended,
     {
         files: ["**/*.ts"],
-
         languageOptions: {
             globals: {
                 ...globals.browser,
@@ -27,31 +36,41 @@ export default defineConfig([
             parser: tsParser,
             parserOptions: {
                 project: "./tsconfig.json",
-                // projectService: {
-                //     allowDefaultProject: ["eslint.config.js", "manifest.json"],
-                // },
                 tsconfigRootDir: import.meta.dirname,
                 extraFileExtensions: [".json"],
             },
         },
         rules: {
-            "obsidianmd/no-plugin-as-component": "off", // Temporary
-            "obsidianmd/rule-custom-message": "off", // Temporary
-            "obsidianmd/ui/sentence-case": "off", // Temporary
-            "obsidianmd/no-static-styles-assignment": "warn", // Temporary
-            "obsidianmd/settings-tab/no-manual-html-headings": "warn", // Temporary
+            ...baseRules,
+            ...obsidianRules,
+            ...ImportAliasRules("."),
+            "@dword-design/import-alias/prefer-alias": "off", // Diffzip does not use path aliases
+            // Custom rules overrides or adjustments for diffzip:
+            "obsidianmd/no-plugin-as-component": "off",
+            "obsidianmd/rule-custom-message": "off",
+            "obsidianmd/ui/sentence-case": "off",
+            "obsidianmd/no-static-styles-assignment": "off",
         },
     },
     {
         files: ["**/*.svelte"],
         languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
+            parser: svelteParser,
             parserOptions: {
                 parser: tsParser,
+                project: "./tsconfig.json",
+                extraFileExtensions: [".svelte"],
             },
         },
         rules: {
-            "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-            "obsidianmd/no-plugin-as-component": "off", // Temporary
+            "no-unused-vars": "off",
+            ...obsidianRules,
+            ...ImportAliasRules("."),
+            "@dword-design/import-alias/prefer-alias": "off",
+            "obsidianmd/no-plugin-as-component": "off",
         },
     },
 ]);

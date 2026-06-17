@@ -78,7 +78,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         if (key in this.messages) {
             n = this.messages[key];
             window.clearTimeout(n.timer);
-            if (!n.notice.noticeEl.isShown()) {
+            if (!n.notice.messageEl.isShown()) {
                 delete this.messages[key];
             } else {
                 n.notice.setMessage(message);
@@ -184,6 +184,7 @@ export default class DiffZipBackupPlugin extends Plugin {
             noticeContainer.appendChild(progress.fragment);
             noticeFragment.appendChild(noticeContainer);
             const notice = new Notice(noticeFragment, 0);
+            notice.messageEl.classList.add("diffzip-progress-notice-message");
             return (await this.getFiles("", ignores, progress)).filter((e) => !e.startsWith(".trash/"));
         }
         return this.app.vault.getFiles().map((e) => e.path);

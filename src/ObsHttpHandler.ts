@@ -1,8 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-deprecated */
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-deprecated -- This file is based on an external library (remotely-save) and uses legacy/untyped APIs */
 // deno-lint-ignore-file
 // This file is based on a file that was published by the @remotely-save, under the Apache 2 License.
 // I would love to express my deepest gratitude to the original authors for their hard work and dedication. Without their contributions, this project would not have been possible.

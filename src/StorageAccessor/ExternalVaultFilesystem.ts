@@ -9,7 +9,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     get sep(): string {
         //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- internal API access
         return this.app.vault.adapter.path.sep as string;
     }
     get fsPromises(): FsAPI {
@@ -31,7 +31,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     async _writeBinary(fullPath: string, data: ArrayBuffer) {
         try {
-            // eslint-disable-next-line no-undef
+            // eslint-disable-next-line no-undef -- Buffer is global in Node/Electron environment
             await this.fsPromises.writeFile(fullPath, Buffer.from(data));
             return true;
         } catch (e) {
@@ -70,19 +70,20 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     normalizePath(path: string): string {
         //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- internal API access
         const f = this.app.vault.adapter.path;
         //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- internal API access
         const basePath = this.app.vault.adapter.basePath;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- internal API access
         const normalizedPath = f.normalize(path);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- internal API access
         const result = f.resolve(basePath, normalizedPath);
         return result as string;
     }
 
-    async stat(path: string): Promise<false | Stat> {
+    async stat(_path: string): Promise<false | Stat> {
+        await Promise.resolve();
         //
         // It is not used on external vault for `backup` accessing. If we want to use this for vaultAccess, uncomment and test this.
         //

@@ -32,6 +32,7 @@ export class S3Bucket extends StorageAccessor {
     }
 
     async getClient() {
+        await Promise.resolve();
         const client = new S3({
             endpoint: this.settings.endPoint,
             region: this.settings.region,
