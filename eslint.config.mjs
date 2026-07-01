@@ -61,7 +61,6 @@ export default defineConfig([
             parser: svelteParser,
             parserOptions: {
                 parser: tsParser,
-                project: "./tsconfig.json",
                 extraFileExtensions: [".svelte"],
             },
         },
@@ -71,6 +70,7 @@ export default defineConfig([
             ...ImportAliasRules("."),
             "@dword-design/import-alias/prefer-alias": "off",
             "obsidianmd/no-plugin-as-component": "off",
+            "obsidianmd/no-unsupported-api": "off",
         },
     },
 ]);

@@ -71,5 +71,5 @@ export type NoticeWithTimer = {
 };
 
 
-export type XByteArray = Uint8Array;
+export type XByteArray = Uint8Array<ArrayBuffer>;
 export type XDataView = DataView;
