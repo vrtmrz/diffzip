@@ -5,6 +5,8 @@
  * tools that would be available in a typical environment:
  *
  *   - unzip  (Linux / macOS built-in; Git for Windows includes it)
+ *   - 7z
+ *   - openssl enc + 7z
  *   - PowerShell Expand-Archive  (Windows OS built-in)
  *
  * Tests skip gracefully when the required tool is not in PATH.
@@ -16,6 +18,7 @@ if (typeof window === "undefined") {
     (globalThis as unknown as Record<string, unknown>).activeWindow = globalThis;
 }
 
+import { OpenSSLCompat } from "octagonal-wheels/encryption";
 import { Archiver } from "./Archive.ts";
 
 declare const Deno: {
@@ -53,6 +56,7 @@ const TEST_FILES = [
 
 /** Fixed mtime in the fflate-valid range (2024-06-01 00:00 UTC). */
 const FIXED_MTIME = new Date("2024-06-01T00:00:00Z").getTime();
+const ENCRYPTION_PASSPHRASE = "diffzip compatibility test passphrase";
 
 async function buildZip(): Promise<Uint8Array<ArrayBuffer>> {
     const zip = new Archiver();
@@ -60,6 +64,12 @@ async function buildZip(): Promise<Uint8Array<ArrayBuffer>> {
         zip.addTextFile(content, name, { mtime: FIXED_MTIME });
     }
     return zip.finalize();
+}
+
+async function buildEncryptedZip(): Promise<Uint8Array<ArrayBuffer>> {
+    const zipData = await buildZip();
+    const encrypted = await OpenSSLCompat.CBC.encryptCBC(zipData, ENCRYPTION_PASSPHRASE, 10000);
+    return new Uint8Array(encrypted) as Uint8Array<ArrayBuffer>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,6 +91,26 @@ async function commandExists(cmd: string): Promise<boolean> {
 
 function text(bytes: Uint8Array<ArrayBuffer>): string {
     return new TextDecoder().decode(bytes);
+}
+
+function extractedPath(tmpDir: string, name: string): string {
+    return Deno.build.os === "windows"
+        ? `${tmpDir}\\${name.replace(/\//g, "\\")}`
+        : `${tmpDir}/${name}`;
+}
+
+async function assertExtractedFiles(tmpDir: string): Promise<void> {
+    for (const { name, content } of TEST_FILES) {
+        const bytes = await Deno.readFile(extractedPath(tmpDir, name));
+        const actual = text(bytes);
+        if (actual !== content) {
+            throw new Error(
+                `Content mismatch for ${name}:\n` +
+                    `  expected ${JSON.stringify(content)}\n` +
+                    `  got      ${JSON.stringify(actual)}`,
+            );
+        }
+    }
 }
 
 // ── unzip ─────────────────────────────────────────────────────────────────────
@@ -123,18 +153,90 @@ Deno.test("ZIP compat: unzip extracts files with correct content", async () => {
         if (!r.success) {
             throw new Error(`unzip failed:\n${text(r.stdout)}\n${text(r.stderr)}`);
         }
-        for (const { name, content } of TEST_FILES) {
-            const bytes = await Deno.readFile(`${tmpDir}/${name}`);
-            const actual = text(bytes);
-            if (actual !== content) {
-                throw new Error(
-                    `Content mismatch for ${name}:\n` +
-                        `  expected ${JSON.stringify(content)}\n` +
-                        `  got      ${JSON.stringify(actual)}`,
-                );
-            }
-        }
+        await assertExtractedFiles(tmpDir);
     } finally {
+        await Deno.remove(tmpZip).catch(() => {});
+        await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+});
+
+// ── 7z ────────────────────────────────────────────────────────────────────────
+
+Deno.test("ZIP compat: 7z extracts files with correct content", async () => {
+    if (!(await commandExists("7z"))) {
+        console.log("  (skip) 7z not found in PATH");
+        return;
+    }
+    const tmpZip = await Deno.makeTempFile({ suffix: ".zip" });
+    const tmpDir = await Deno.makeTempDir();
+    try {
+        await Deno.writeFile(tmpZip, await buildZip());
+        const r = await new Deno.Command("7z", {
+            args: ["x", "-y", `-o${tmpDir}`, tmpZip],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        if (!r.success) {
+            throw new Error(`7z extract failed:\n${text(r.stdout)}\n${text(r.stderr)}`);
+        }
+        await assertExtractedFiles(tmpDir);
+    } finally {
+        await Deno.remove(tmpZip).catch(() => {});
+        await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+});
+
+// ── OpenSSL-compatible encryption ─────────────────────────────────────────────
+
+Deno.test("ZIP compat: openssl decrypts encrypted ZIP and 7z extracts it", async () => {
+    if (!(await commandExists("openssl"))) {
+        console.log("  (skip) openssl not found in PATH");
+        return;
+    }
+    if (!(await commandExists("7z"))) {
+        console.log("  (skip) 7z not found in PATH");
+        return;
+    }
+    const tmpEncrypted = await Deno.makeTempFile({ suffix: ".zip.enc" });
+    const tmpZip = await Deno.makeTempFile({ suffix: ".zip" });
+    const tmpDir = await Deno.makeTempDir();
+    try {
+        await Deno.writeFile(tmpEncrypted, await buildEncryptedZip());
+        const decrypt = await new Deno.Command("openssl", {
+            args: [
+                "enc",
+                "-d",
+                "-aes-256-cbc",
+                "-in",
+                tmpEncrypted,
+                "-out",
+                tmpZip,
+                "-k",
+                ENCRYPTION_PASSPHRASE,
+                "-pbkdf2",
+                "-md",
+                "sha256",
+            ],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        if (!decrypt.success) {
+            throw new Error(`openssl decrypt failed:\n${text(decrypt.stdout)}\n${text(decrypt.stderr)}`);
+        }
+
+        const extract = await new Deno.Command("7z", {
+            args: ["x", "-y", `-o${tmpDir}`, tmpZip],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        if (!extract.success) {
+            throw new Error(
+                `7z extract after openssl decrypt failed:\n${text(extract.stdout)}\n${text(extract.stderr)}`,
+            );
+        }
+        await assertExtractedFiles(tmpDir);
+    } finally {
+        await Deno.remove(tmpEncrypted).catch(() => {});
         await Deno.remove(tmpZip).catch(() => {});
         await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
     }
@@ -166,18 +268,7 @@ Deno.test(
             if (!r.success) {
                 throw new Error(`Expand-Archive failed:\n${text(r.stderr)}`);
             }
-            for (const { name, content } of TEST_FILES) {
-                const path = `${tmpDir}\\${name.replace(/\//g, "\\")}`;
-                const bytes = await Deno.readFile(path);
-                const actual = text(bytes);
-                if (actual !== content) {
-                    throw new Error(
-                        `Content mismatch for ${name}:\n` +
-                            `  expected ${JSON.stringify(content)}\n` +
-                            `  got      ${JSON.stringify(actual)}`,
-                    );
-                }
-            }
+            await assertExtractedFiles(tmpDir);
         } finally {
             await Deno.remove(tmpZip).catch(() => {});
             await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
