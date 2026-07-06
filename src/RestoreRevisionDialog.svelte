@@ -51,6 +51,7 @@
     let applying = $state(false);
     let mode = $state<RestoreMode>("new");
     let prefix = $state("");
+    let restorePoint = $state(0);
 
     let searchTimeoutId: number | undefined = undefined;
     function handleSearchInput(e: Event) {
@@ -230,6 +231,19 @@
 
     const selectedCount = $derived(rows.filter((r) => r.selected !== 0).length);
 
+    const restorePoints = $derived.by(() => {
+        const points = new Map<number, string>();
+        for (const row of rows) {
+            for (const rev of row.history) {
+                if (!Number.isFinite(rev.ts)) continue;
+                points.set(rev.ts, rev.modified);
+            }
+        }
+        return [...points.entries()]
+            .map(([ts, modified]) => ({ ts, modified }))
+            .sort((a, b) => b.ts - a.ts);
+    });
+
     function setSelected(filename: string, selected: number) {
         const row = rows.find((r) => r.filename === filename);
         if (row) {
@@ -265,6 +279,36 @@
                 }
             }
         }
+    }
+
+    function visibleFileSet(): Set<string> {
+        const visibleFiles = new Set<string>();
+        const collectFiles = (node: TreeNode) => {
+            if (node.type === "file") {
+                visibleFiles.add(node.id);
+            } else {
+                node.children.forEach(collectFiles);
+            }
+        };
+        visibleNodes.forEach(collectFiles);
+        return visibleFiles;
+    }
+
+    function selectRowsAtRestorePoint(targetRows: Row[]) {
+        if (restorePoint === 0) return;
+        for (const row of targetRows) {
+            const revision = row.history.find((rev) => rev.ts <= restorePoint);
+            row.selected = revision?.ts ?? 0;
+        }
+    }
+
+    function selectFilteredAtRestorePoint() {
+        const visibleFiles = visibleFileSet();
+        selectRowsAtRestorePoint(rows.filter((r) => visibleFiles.has(r.filename)));
+    }
+
+    function selectAllAtRestorePoint() {
+        selectRowsAtRestorePoint(rows);
     }
 
     function clearSelection() {
@@ -397,6 +441,8 @@
         <button onclick={clearSelection}>Clear</button>
         <button onclick={selectFilteredLatest}>Select Filtered Latest</button>
         <button onclick={selectAllLatest}>Select All Latest</button>
+        <button onclick={selectFilteredAtRestorePoint} disabled={restorePoint === 0}>Select Filtered at Point</button>
+        <button onclick={selectAllAtRestorePoint} disabled={restorePoint === 0}>Select All at Point</button>
         <button onclick={expandAll}>Expand All</button>
         <button onclick={collapseAll}>Collapse All</button>
     </div>
@@ -408,6 +454,15 @@
                 <option value="new">Only new</option>
                 <option value="all">All</option>
                 <option value="all-delete">All and delete extra</option>
+            </select>
+        </label>
+        <label>
+            Restore point
+            <select bind:value={restorePoint}>
+                <option value={0}>Latest</option>
+                {#each restorePoints as point}
+                    <option value={point.ts}>{formatDate(point.modified)}</option>
+                {/each}
             </select>
         </label>
         <label class="diffzip-restore-prefix">

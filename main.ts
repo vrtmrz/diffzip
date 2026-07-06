@@ -27,6 +27,7 @@ import { ProgressFragment } from "./src/ProgressFragment.ts";
 import { CombinedFragment } from "./src/CombinedFragment.ts";
 import { SyncProgressDialog } from "./src/SyncProgressDialog.ts";
 import { detectChangedFiles, planBatches, packBatches, type ArchivedBatch } from "./src/tasks.ts";
+import { delay } from "octagonal-wheels/promises";
 
 export default class DiffZipBackupPlugin extends Plugin {
     settings!: DiffZipBackupSettings;
@@ -811,27 +812,25 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         }
         this.app.workspace.onLayoutReady(() => this.onLayoutReady());
 
-        this.addCommand({
-            id: "a-find-from-backups",
-            name: "Restore from backups",
-            callback: async () => {
-                const d = new RestoreDialog(this.app, this);
-                d.open();
-            },
-        });
-        this.addCommand({
-            id: "find-from-backups-old",
-            name: "Restore from backups (previous behaviour)",
-            callback: async () => {
-                await this.selectAndRestore();
-            },
-        });
+        const openSyncDialog = () => {
+            const storageType = getStorageTypeForBackupAccess(this);
+            if (storageType !== StorageAccessorTypes.S3 && storageType !== StorageAccessorTypes.EXTERNAL) {
+                new Notice(
+                    "Remote storage is not configured. Please enable S3 or Desktop external folder in settings."
+                );
+                return;
+            }
+            const d = new SyncRemoteDialog(this.app, this);
+            d.open();
+        };
 
         this.addCommand({
-            id: "find-from-backups-dir",
-            name: "Restore from backups per folder",
+            id: "a-find-from-backups",
+            name: "Restore from Backup",
             callback: async () => {
-                await this.selectAndRestoreFolder();
+                await delay(0);
+                const d = new RestoreDialog(this.app, this);
+                d.open();
             },
         });
         this.addCommand({
@@ -842,56 +841,69 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
             },
         });
         this.addCommand({
-            id: "b-create-diff-zip-only-new",
-            name: "Create Differential Backup Only Newer Files",
-            callback: async () => {
-                await this.createZip(true, true);
-            },
-        });
-        this.addCommand({
-            id: "b-create-diff-zip-only-new-and-existing",
-            name: "Create Non-Destructive Differential Backup",
-            callback: async () => {
-                await this.createZip(true, false, true);
-            },
-        });
-        this.addCommand({
-            id: "b-create-diff-zip-only-new-and-existing-only-new",
-            name: "Create Non-Destructive Differential Backup Only Newer Files",
-            callback: async () => {
-                await this.createZip(true, true, true);
-            },
+            id: "check-and-mirror-remote",
+            name: "Sync Remote Backup",
+            callback: openSyncDialog,
         });
 
-        this.addCommand({
-            id: "vault-restore-from-backups-only-new",
-            name: "Fetch all new files from the backups",
-            callback: async () => {
-                await this.restoreVault(true, false);
-            },
-        });
-        this.addCommand({
-            id: "vault-restore-from-backups-with-deletion",
-            name: "⚠ Restore Vault from backups and delete with deletion",
-            callback: async () => {
-                await this.restoreVault(false, true);
-            },
-        });
-        this.addCommand({
-            id: "check-and-mirror-remote",
-            name: "Selective Sync Remote Backup",
-            callback: () => {
-                const storageType = getStorageTypeForBackupAccess(this);
-                if (storageType !== StorageAccessorTypes.S3 && storageType !== StorageAccessorTypes.EXTERNAL) {
-                    new Notice(
-                        "Remote storage is not configured. Please enable S3 or Desktop external folder in settings."
-                    );
-                    return;
-                }
-                const d = new SyncRemoteDialog(this.app, this);
-                d.open();
-            },
-        });
+        if (this.settings.showLegacyCommands) {
+            this.addCommand({
+                id: "find-from-backups-old",
+                name: "Legacy: Restore from backups (previous behaviour)",
+                callback: async () => {
+                    await this.selectAndRestore();
+                },
+            });
+
+            this.addCommand({
+                id: "find-from-backups-dir",
+                name: "Legacy: Restore from backups per folder",
+                callback: async () => {
+                    await this.selectAndRestoreFolder();
+                },
+            });
+            this.addCommand({
+                id: "b-create-diff-zip-only-new",
+                name: "Legacy: Create Differential Backup Only Newer Files",
+                callback: async () => {
+                    await this.createZip(true, true);
+                },
+            });
+            this.addCommand({
+                id: "b-create-diff-zip-only-new-and-existing",
+                name: "Legacy: Create Non-Destructive Differential Backup",
+                callback: async () => {
+                    await this.createZip(true, false, true);
+                },
+            });
+            this.addCommand({
+                id: "b-create-diff-zip-only-new-and-existing-only-new",
+                name: "Legacy: Create Non-Destructive Differential Backup Only Newer Files",
+                callback: async () => {
+                    await this.createZip(true, true, true);
+                },
+            });
+
+            this.addCommand({
+                id: "vault-restore-from-backups-only-new",
+                name: "Legacy: Fetch all new files from the backups",
+                callback: async () => {
+                    await this.restoreVault(true, false);
+                },
+            });
+            this.addCommand({
+                id: "vault-restore-from-backups-with-deletion",
+                name: "Legacy: ⚠ Restore Vault from backups and delete with deletion",
+                callback: async () => {
+                    await this.restoreVault(false, true);
+                },
+            });
+            this.addCommand({
+                id: "check-and-mirror-remote-legacy",
+                name: "Legacy: Selective Sync Remote Backup",
+                callback: openSyncDialog,
+            });
+        }
         this.addSettingTab(new DiffZipSettingTab(this.app, this));
     }
 
