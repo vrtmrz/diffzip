@@ -10,6 +10,31 @@ We can store all the files which have been modified, into a ZIP file.
 
 1. Install this plug-in from [Community Plugins](https://obsidian.md/plugins).
 
+## Development
+
+### Running tests
+
+The test suite uses Deno.
+
+```sh
+deno task test
+```
+
+To run tests with coverage:
+
+```sh
+deno task test:coverage
+```
+
+Some ZIP compatibility tests use external command-line tools when they are available in `PATH`:
+
+- `unzip`
+- `7z`
+- `openssl`
+- Windows PowerShell `Expand-Archive`
+
+Tests that require a missing tool are skipped.
+
 ## How to use
 
 ### Making backup

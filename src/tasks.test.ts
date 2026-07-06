@@ -11,8 +11,9 @@ if (typeof window === "undefined") {
 import { detectChangedFiles, packBatches, planBatches, type PrepFile, type ProgressReporter, type VaultReader } from "./tasks.ts";
 import type { TocUpdate } from "./SyncPlanner.ts";
 import type { FileInfo, FileInfos } from "./types.ts";
-import { DEFAULT_SETTINGS } from "./types.ts";
+import { DEFAULT_SETTINGS, InfoFile } from "./types.ts";
 import { computeDigest } from "./util.ts";
+import { Extractor } from "./Archive.ts";
 
 
 declare const Deno: {
@@ -64,6 +65,10 @@ function makeVault(
 
 function textBuffer(s: string): ArrayBuffer {
     return new TextEncoder().encode(s).buffer as ArrayBuffer;
+}
+
+function text(bytes: Uint8Array<ArrayBuffer>): string {
+    return new TextDecoder().decode(bytes);
 }
 
 /** Bare-minimum FileInfo entry. */
@@ -300,6 +305,54 @@ function emptyToc(): FileInfos {
     return {};
 }
 
+async function runBackupPipeline(
+    files: Record<string, { content: ArrayBuffer; mtime: number }>,
+    allFiles: string[],
+    toc: FileInfos,
+    makeZipName: (batchIndex: number) => string,
+    processedAt: number,
+) {
+    return collect(
+        packBatches(
+            planBatches(
+                detectChangedFiles(
+                    false, false, mockProgress(), mockProgress(), () => {},
+                    toc, allFiles, makeVault(files), "backups", () => {}, () => {}, () => {}, "/", baseSettings, today,
+                ),
+                100,
+                0,
+            ),
+            makeZipName,
+            toc,
+            processedAt,
+            () => {},
+            mockProgress(),
+            mockProgress(),
+            JSON.stringify,
+        ),
+    );
+}
+
+async function extractZipText(zipData: Uint8Array<ArrayBuffer>): Promise<Record<string, string>> {
+    const extracted: Record<string, string> = {};
+    const extractor = new Extractor(
+        () => true,
+        async (filename, content) => {
+            extracted[filename] = text(content);
+        },
+    );
+    extractor.addZippedContent(zipData, true);
+    await new Promise((res) => setTimeout(res, 100));
+    return extracted;
+}
+
+function parseBackupInfo(text: string): FileInfos {
+    const trimmed = text.trim();
+    assert(trimmed.startsWith("```"), "backupinfo.md should start with a fenced block");
+    assert(trimmed.endsWith("```"), "backupinfo.md should end with a fenced block");
+    return JSON.parse(trimmed.slice(3, -3).trim()) as FileInfos;
+}
+
 Deno.test("packBatches: single batch yields ArchivedBatch with correct metadata", async () => {
     const files = [makeFile("a.md", 4), makeFile("b.md", 3)];
     const planned = fromItems([{ files, missingUpdates: [] }]);
@@ -355,4 +408,111 @@ Deno.test("packBatches: nextToc reflects file and missing TocUpdates", async () 
     assertEquals(batch.nextToc["gone.md"].missing, true, "gone.md marked missing in TOC");
     assertEquals(batch.nextToc["note.md"].missing, false, "note.md not missing in TOC");
     assertEquals(batch.nextToc["note.md"].digest, `d-note.md`, "digest from PrepFile");
+});
+
+Deno.test("backup pipeline: incremental runs handle add, modify, delete, same-mtime modify, and recreate", async () => {
+    const baseMtime = new Date("2024-06-01T00:00:00Z").getTime();
+    const initialVault = {
+        "unchanged.md": { content: textBuffer("same content"), mtime: baseMtime },
+        "modified.md": { content: textBuffer("old content"), mtime: baseMtime + 1000 },
+        "same-time-modified.md": { content: textBuffer("same time old content"), mtime: baseMtime + 2000 },
+        "deleted.md": { content: textBuffer("delete me"), mtime: baseMtime + 2000 },
+    };
+
+    const [firstBackup] = await runBackupPipeline(
+        initialVault,
+        ["unchanged.md", "modified.md", "same-time-modified.md", "deleted.md"],
+        emptyToc(),
+        () => "full-0.zip",
+        10_000,
+    );
+    assert(firstBackup !== undefined, "first run should create a full backup");
+
+    const incrementalVault = {
+        "unchanged.md": { content: textBuffer("same content"), mtime: baseMtime },
+        "modified.md": { content: textBuffer("new content"), mtime: baseMtime + 3000 },
+        "same-time-modified.md": { content: textBuffer("same time new content"), mtime: baseMtime + 2000 },
+        "added.md": { content: textBuffer("brand new"), mtime: baseMtime + 4000 },
+    };
+
+    const [secondBackup] = await runBackupPipeline(
+        incrementalVault,
+        ["unchanged.md", "modified.md", "same-time-modified.md", "added.md"],
+        firstBackup.nextToc,
+        () => "incremental-0.zip",
+        20_000,
+    );
+    assert(secondBackup !== undefined, "second run should create an incremental backup");
+    assertEquals(secondBackup.fileCount, 3, "second ZIP should contain only added and modified files");
+
+    const extracted = await extractZipText(secondBackup.zipData);
+    assertEquals(extracted["modified.md"], "new content", "modified file content should be archived");
+    assertEquals(extracted["same-time-modified.md"], "same time new content", "same-mtime modified file content should be archived");
+    assertEquals(extracted["added.md"], "brand new", "new file content should be archived");
+    assert(!("unchanged.md" in extracted), "unchanged file should not be archived again");
+    assert(!("deleted.md" in extracted), "deleted file should not be archived as content");
+    assert(InfoFile in extracted, "incremental ZIP should include backupinfo.md");
+
+    const nextToc = secondBackup.nextToc;
+    assertEquals(parseBackupInfo(extracted[InfoFile]), nextToc, "backupinfo.md should match second run nextToc");
+    assertEquals(nextToc["unchanged.md"].history.length, 1, "unchanged file history should not grow");
+    assertEquals(nextToc["unchanged.md"].history[0].zipName, "full-0.zip", "unchanged file should still point to full backup");
+    assertEquals(nextToc["modified.md"].missing, false, "modified file should not be marked missing");
+    assertEquals(nextToc["modified.md"].history.length, 2, "modified file should get a second history entry");
+    assertEquals(nextToc["modified.md"].history.at(-1)?.zipName, "incremental-0.zip", "modified history should point to incremental ZIP");
+    assertEquals(nextToc["same-time-modified.md"].missing, false, "same-mtime modified file should not be marked missing");
+    assertEquals(nextToc["same-time-modified.md"].history.length, 2, "same-mtime modified file should get a second history entry");
+    assertEquals(
+        nextToc["same-time-modified.md"].history.at(-1)?.zipName,
+        "incremental-0.zip",
+        "same-mtime modified history should point to incremental ZIP",
+    );
+    assertEquals(nextToc["added.md"].history.length, 1, "new file should get one history entry");
+    assertEquals(nextToc["added.md"].history[0].zipName, "incremental-0.zip", "new file should point to incremental ZIP");
+    assertEquals(nextToc["deleted.md"].missing, true, "deleted file should be marked missing");
+    assertEquals(nextToc["deleted.md"].history.length, 2, "deleted file should get a missing history entry");
+    assertEquals(nextToc["deleted.md"].history.at(-1)?.missing, true, "latest deleted history should be marked missing");
+    assertEquals(nextToc["deleted.md"].history.at(-1)?.zipName, "incremental-0.zip", "deleted history should point to incremental ZIP");
+
+    const recreatedVault = {
+        "unchanged.md": { content: textBuffer("same content"), mtime: baseMtime },
+        "modified.md": { content: textBuffer("new content"), mtime: baseMtime + 3000 },
+        "same-time-modified.md": { content: textBuffer("same time new content"), mtime: baseMtime + 2000 },
+        "added.md": { content: textBuffer("brand new"), mtime: baseMtime + 4000 },
+        "deleted.md": { content: textBuffer("reborn"), mtime: baseMtime + 5000 },
+    };
+
+    const [thirdBackup] = await runBackupPipeline(
+        recreatedVault,
+        ["unchanged.md", "modified.md", "same-time-modified.md", "added.md", "deleted.md"],
+        secondBackup.nextToc,
+        () => "recreated-0.zip",
+        30_000,
+    );
+    assert(thirdBackup !== undefined, "third run should create a backup for the recreated file");
+    assertEquals(thirdBackup.fileCount, 1, "third ZIP should contain only the recreated file");
+
+    const thirdExtracted = await extractZipText(thirdBackup.zipData);
+    assertEquals(thirdExtracted["deleted.md"], "reborn", "recreated file content should be archived");
+    assert(!("unchanged.md" in thirdExtracted), "unchanged file should not be archived in third run");
+    assert(!("modified.md" in thirdExtracted), "previously modified file should not be archived again in third run");
+    assert(!("same-time-modified.md" in thirdExtracted), "same-mtime modified file should not be archived again in third run");
+    assert(!("added.md" in thirdExtracted), "previously added file should not be archived again in third run");
+
+    const finalToc = thirdBackup.nextToc;
+    assertEquals(parseBackupInfo(thirdExtracted[InfoFile]), finalToc, "backupinfo.md should match third run nextToc");
+    assertEquals(finalToc["deleted.md"].missing, false, "recreated file should clear the missing flag");
+    assertEquals(finalToc["deleted.md"].history.length, 3, "recreated file should keep full history");
+    assertEquals(finalToc["deleted.md"].history.at(-1)?.missing, undefined, "latest recreated history should not be marked missing");
+    assertEquals(finalToc["deleted.md"].history.at(-1)?.zipName, "recreated-0.zip", "recreated history should point to third ZIP");
+    assertEquals(finalToc["deleted.md"].history.at(-1)?.digest, finalToc["deleted.md"].digest, "recreated latest history digest should match TOC digest");
+
+    const noChangeBackups = await runBackupPipeline(
+        recreatedVault,
+        ["unchanged.md", "modified.md", "same-time-modified.md", "added.md", "deleted.md"],
+        finalToc,
+        () => "empty-0.zip",
+        40_000,
+    );
+    assertEquals(noChangeBackups.length, 0, "no-change incremental run should not create a backup");
 });

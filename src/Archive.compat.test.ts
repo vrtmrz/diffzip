@@ -93,6 +93,25 @@ function text(bytes: Uint8Array<ArrayBuffer>): string {
     return new TextDecoder().decode(bytes);
 }
 
+function splitBytes(data: Uint8Array<ArrayBuffer>, chunkSize: number): Uint8Array<ArrayBuffer>[] {
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
+    for (let offset = 0; offset < data.length; offset += chunkSize) {
+        chunks.push(data.slice(offset, offset + chunkSize));
+    }
+    return chunks;
+}
+
+function concatBytes(chunks: Uint8Array<ArrayBuffer>[]): Uint8Array<ArrayBuffer> {
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const joined = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        joined.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return joined as Uint8Array<ArrayBuffer>;
+}
+
 function extractedPath(tmpDir: string, name: string): string {
     return Deno.build.os === "windows"
         ? `${tmpDir}\\${name.replace(/\//g, "\\")}`
@@ -186,6 +205,37 @@ Deno.test("ZIP compat: 7z extracts files with correct content", async () => {
     }
 });
 
+// ── Split ZIP chunks ──────────────────────────────────────────────────────────
+
+Deno.test("ZIP compat: split ZIP chunks can be joined and extracted by 7z", async () => {
+    if (!(await commandExists("7z"))) {
+        console.log("  (skip) 7z not found in PATH");
+        return;
+    }
+    const tmpZip = await Deno.makeTempFile({ suffix: ".zip" });
+    const tmpDir = await Deno.makeTempDir();
+    try {
+        const zipData = await buildZip();
+        const chunks = splitBytes(zipData, Math.max(1, Math.floor(zipData.length / 3)));
+        if (chunks.length < 2) {
+            throw new Error("Test setup failed: ZIP should be split into multiple chunks");
+        }
+        await Deno.writeFile(tmpZip, concatBytes(chunks));
+        const r = await new Deno.Command("7z", {
+            args: ["x", "-y", `-o${tmpDir}`, tmpZip],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        if (!r.success) {
+            throw new Error(`7z extract of joined split ZIP failed:\n${text(r.stdout)}\n${text(r.stderr)}`);
+        }
+        await assertExtractedFiles(tmpDir);
+    } finally {
+        await Deno.remove(tmpZip).catch(() => {});
+        await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+});
+
 // ── OpenSSL-compatible encryption ─────────────────────────────────────────────
 
 Deno.test("ZIP compat: openssl decrypts encrypted ZIP and 7z extracts it", async () => {
@@ -239,6 +289,85 @@ Deno.test("ZIP compat: openssl decrypts encrypted ZIP and 7z extracts it", async
         await Deno.remove(tmpEncrypted).catch(() => {});
         await Deno.remove(tmpZip).catch(() => {});
         await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+});
+
+Deno.test("ZIP compat: openssl decrypts encrypted split chunks and 7z extracts the joined ZIP", async () => {
+    if (!(await commandExists("openssl"))) {
+        console.log("  (skip) openssl not found in PATH");
+        return;
+    }
+    if (!(await commandExists("7z"))) {
+        console.log("  (skip) 7z not found in PATH");
+        return;
+    }
+
+    const tmpDir = await Deno.makeTempDir();
+    const tmpZip = await Deno.makeTempFile({ suffix: ".zip" });
+    const extractDir = await Deno.makeTempDir();
+    const encryptedPartPaths: string[] = [];
+    const decryptedPartPaths: string[] = [];
+    try {
+        const zipData = await buildZip();
+        const chunks = splitBytes(zipData, Math.max(1, Math.floor(zipData.length / 3)));
+        if (chunks.length < 2) {
+            throw new Error("Test setup failed: ZIP should be split into multiple chunks");
+        }
+
+        for (let i = 0; i < chunks.length; i++) {
+            const encrypted = await OpenSSLCompat.CBC.encryptCBC(chunks[i], ENCRYPTION_PASSPHRASE, 10000);
+            const encryptedPath = `${tmpDir}/part-${i}.enc`;
+            const decryptedPath = `${tmpDir}/part-${i}.zipchunk`;
+            encryptedPartPaths.push(encryptedPath);
+            decryptedPartPaths.push(decryptedPath);
+            await Deno.writeFile(encryptedPath, new Uint8Array(encrypted) as Uint8Array<ArrayBuffer>);
+
+            const decrypt = await new Deno.Command("openssl", {
+                args: [
+                    "enc",
+                    "-d",
+                    "-aes-256-cbc",
+                    "-in",
+                    encryptedPath,
+                    "-out",
+                    decryptedPath,
+                    "-k",
+                    ENCRYPTION_PASSPHRASE,
+                    "-pbkdf2",
+                    "-md",
+                    "sha256",
+                ],
+                stdout: "piped",
+                stderr: "piped",
+            }).output();
+            if (!decrypt.success) {
+                throw new Error(`openssl decrypt split chunk failed:\n${text(decrypt.stdout)}\n${text(decrypt.stderr)}`);
+            }
+        }
+
+        const decryptedChunks = [];
+        for (const path of decryptedPartPaths) {
+            decryptedChunks.push(await Deno.readFile(path));
+        }
+        await Deno.writeFile(tmpZip, concatBytes(decryptedChunks));
+
+        const extract = await new Deno.Command("7z", {
+            args: ["x", "-y", `-o${extractDir}`, tmpZip],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        if (!extract.success) {
+            throw new Error(
+                `7z extract after decrypting split chunks failed:\n${text(extract.stdout)}\n${text(extract.stderr)}`,
+            );
+        }
+        await assertExtractedFiles(extractDir);
+    } finally {
+        await Deno.remove(tmpZip).catch(() => {});
+        for (const path of encryptedPartPaths) await Deno.remove(path).catch(() => {});
+        for (const path of decryptedPartPaths) await Deno.remove(path).catch(() => {});
+        await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+        await Deno.remove(extractDir, { recursive: true }).catch(() => {});
     }
 });
 
