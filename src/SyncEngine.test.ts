@@ -43,9 +43,14 @@ function assertEquals<T>(actual: T, expected: T, message: string) {
 /** In-memory vault: filename → {content, mtime} */
 class MemoryVault implements VaultReadAdapter, VaultDeleteAdapter {
     files = new Map<string, { content: Uint8Array; mtime: number }>();
+    readFailures = new Set<string>();
 
     addFile(path: string, text: string, mtime = 1000) {
         this.files.set(path, { content: new TextEncoder().encode(text), mtime });
+    }
+
+    failRead(path: string) {
+        this.readFailures.add(path);
     }
 
     normalizePath(path: string) { return path; }
@@ -56,6 +61,7 @@ class MemoryVault implements VaultReadAdapter, VaultDeleteAdapter {
     }
 
     async readBinary(path: string): Promise<ArrayBuffer | false> {
+        if (this.readFailures.has(path)) return false;
         const f = this.files.get(path);
         return f ? f.content.buffer as ArrayBuffer : false;
     }
@@ -69,20 +75,28 @@ class MemoryVault implements VaultReadAdapter, VaultDeleteAdapter {
 class MemoryBackup implements BackupStorageAdapter {
     bins = new Map<string, ArrayBuffer>();
     toc: ArrayBuffer | null = null;
+    deleted: string[] = [];
+    failWriteBinaryAfter = Number.POSITIVE_INFINITY;
+    failWriteTOC = false;
+    writeBinaryCalls = 0;
 
     normalizePath(path: string) { return path; }
 
     async writeBinary(path: string, data: ArrayBuffer) {
+        this.writeBinaryCalls++;
+        if (this.writeBinaryCalls > this.failWriteBinaryAfter) return false;
         this.bins.set(path, data);
         return true;
     }
 
     async writeTOC(_path: string, data: ArrayBuffer) {
+        if (this.failWriteTOC) return false;
         this.toc = data;
         return true;
     }
 
     async deleteBinary(path: string) {
+        this.deleted.push(path);
         return this.bins.delete(path);
     }
 }
@@ -119,6 +133,29 @@ const defaultOptions: SyncEngineOptions = {
 
 // 2023-01-01T00:00:00Z in ms — within fflate's 1980-2099 range
 const BASE_MTIME = 1672531200000;
+
+function sendItem(filename: string): SyncItem {
+    return {
+        filename,
+        operation: "Old",
+        zipName: "",
+        modified: "",
+        action: "Send",
+        allowedActions: ["None", "Fetch", "Send"],
+        defaultAction: "Send",
+    };
+}
+
+function decodeText(data: ArrayBuffer): string {
+    return new TextDecoder().decode(data);
+}
+
+function parseFencedJson<T>(text: string): T {
+    const trimmed = text.trim();
+    assert(trimmed.startsWith("```"), "text should start with fenced block");
+    assert(trimmed.endsWith("```"), "text should end with fenced block");
+    return JSON.parse(trimmed.slice(3, -3).trim()) as T;
+}
 
 function makeTocEntry(filename: string, zipName: string, digest: string, mtime: number, missing = false): TocMap[string] {
     return {
@@ -279,6 +316,141 @@ Deno.test("executeSend: multiple files split into batches when maxFilesInZip=1",
     assert(backup.bins.size >= 3, "Should have written 3 ZIPs");
 });
 
+Deno.test("executeSend: missing local file is recorded as missing in TOC", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    const backup = new MemoryBackup();
+
+    const result = await executeSend(
+        [sendItem("missing.md")], vault, backup,
+        async () => ({}),
+        makeZipName,
+        defaultOptions,
+    );
+
+    assertEquals(result.sentCount, 1, "Missing update should count as sent");
+    assert(backup.toc !== null, "TOC should be written");
+    const toc = parseFencedJson<TocMap>(decodeText(backup.toc!));
+    assertEquals(toc["missing.md"].missing, true, "Missing file should be marked missing");
+    assertEquals(toc["missing.md"].history.at(-1)?.missing, true, "History entry should be marked missing");
+});
+
+Deno.test("executeSend: readBinary=false throws for existing file", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    vault.addFile("unreadable.md", "secret", BASE_MTIME);
+    vault.failRead("unreadable.md");
+
+    let thrown: Error | undefined;
+    try {
+        await executeSend(
+            [sendItem("unreadable.md")], vault, new MemoryBackup(),
+            async () => ({}),
+            makeZipName,
+            defaultOptions,
+        );
+    } catch (e) {
+        thrown = e as Error;
+    }
+
+    assert(thrown !== undefined, "read failure should throw");
+    assert(thrown!.message.includes("Could not read local file: unreadable.md"), "error should name unreadable file");
+});
+
+Deno.test("executeSend: oversized file is placed in solo ZIP and reported", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    vault.addFile("small.md", "small", BASE_MTIME);
+    vault.addFile("huge.md", "0123456789", BASE_MTIME + 1000);
+    const backup = new MemoryBackup();
+
+    const warn = console.warn;
+    let result!: Awaited<ReturnType<typeof executeSend>>;
+    try {
+        console.warn = () => {};
+        result = await executeSend(
+            [sendItem("small.md"), sendItem("huge.md")], vault, backup,
+            async () => ({}),
+            makeZipName,
+            { ...defaultOptions, maxTotalSizeInZip: 6 },
+        );
+    } finally {
+        console.warn = warn;
+    }
+
+    assertEquals(result.sentCount, 2, "Both files should be sent");
+    assertEquals(result.oversizedFiles, ["huge.md"], "Huge file should be reported as oversized");
+    assertEquals(backup.bins.size, 2, "Oversized file should be written as a solo ZIP");
+});
+
+Deno.test("executeSend: maxSize splits ZIP writes into numbered parts", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    vault.addFile("large.md", "x".repeat(4096), BASE_MTIME);
+    const backup = new MemoryBackup();
+
+    await executeSend(
+        [sendItem("large.md")], vault, backup,
+        async () => ({}),
+        makeZipName,
+        { ...defaultOptions, maxSize: 120 },
+    );
+
+    const paths = [...backup.bins.keys()].sort();
+    assert(paths.length > 1, "Small maxSize should split the ZIP into multiple writes");
+    assert(paths.every((path) => /\.zip\.\d{3}$/.test(path)), "Split ZIP paths should use numbered suffixes");
+});
+
+Deno.test("executeSend: writeBinary failure rolls back already written split parts", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    vault.addFile("large.md", "x".repeat(4096), BASE_MTIME);
+    const backup = new MemoryBackup();
+    backup.failWriteBinaryAfter = 1;
+
+    let thrown: Error | undefined;
+    try {
+        await executeSend(
+            [sendItem("large.md")], vault, backup,
+            async () => ({}),
+            makeZipName,
+            { ...defaultOptions, maxSize: 120 },
+        );
+    } catch (e) {
+        thrown = e as Error;
+    }
+
+    assert(thrown !== undefined, "writeBinary failure should throw");
+    assert(thrown!.message.includes("Creating backup/"), "error should name failed backup path");
+    assertEquals(backup.bins.size, 0, "Previously written split parts should be rolled back");
+    assertEquals(backup.deleted.length, 1, "One previously written split part should be deleted");
+});
+
+Deno.test("executeSend: writeTOC failure rolls back written ZIP files", async () => {
+    batchCounter = 0;
+    const vault = new MemoryVault();
+    vault.addFile("note.md", "Hello World", BASE_MTIME);
+    const backup = new MemoryBackup();
+    backup.failWriteTOC = true;
+
+    let thrown: Error | undefined;
+    try {
+        await executeSend(
+            [sendItem("note.md")], vault, backup,
+            async () => ({}),
+            makeZipName,
+            defaultOptions,
+        );
+    } catch (e) {
+        thrown = e as Error;
+    }
+
+    assert(thrown !== undefined, "writeTOC failure should throw");
+    assert(thrown!.message.includes("TOC update failed"), "error should mention TOC update failure");
+    assertEquals(backup.bins.size, 0, "Written ZIP should be rolled back when TOC write fails");
+    assertEquals(backup.deleted.length, 1, "Written ZIP should be deleted during rollback");
+});
+
 // ── executeFetch tests ─────────────────────────────────────────────
 
 Deno.test("executeFetch: extracts files from remote ZIP to vault", async () => {
@@ -335,6 +507,43 @@ Deno.test("executeFetch: deletes local file for Delete operation", async () => {
     assertEquals(result.done, 1, "Should have processed 1 file");
     assertEquals(result.failed.length, 0, "Should have no failures");
     assert(!vault.files.has("obsolete.md"), "obsolete.md should be deleted from vault");
+});
+
+Deno.test("executeFetch: extract and delete failures are reported", async () => {
+    const vault = new MemoryVault();
+    vault.addFile("obsolete.md", "Old data", BASE_MTIME);
+    const extractor = new MemoryExtractor(vault, new Map());
+    const deleteAdapter: VaultDeleteAdapter = {
+        deleteLocal: async () => {
+            throw new Error("delete failed");
+        },
+    };
+
+    const fetchItems: SyncItem[] = [
+        {
+            filename: "missing-remote.md",
+            operation: "Add",
+            zipName: "missing.zip",
+            modified: new Date(BASE_MTIME).toISOString(),
+            action: "Fetch",
+            allowedActions: ["None", "Fetch"],
+            defaultAction: "Fetch",
+        },
+        {
+            filename: "obsolete.md",
+            operation: "Delete",
+            zipName: "",
+            modified: "",
+            action: "Fetch",
+            allowedActions: ["None", "Fetch", "Send"],
+            defaultAction: "Fetch",
+        },
+    ];
+
+    const result = await executeFetch(fetchItems, extractor, deleteAdapter);
+
+    assertEquals(result.done, 0, "No failed operation should be counted as done");
+    assertEquals(result.failed.sort(), ["missing-remote.md", "obsolete.md"], "Failures should include extract and delete items");
 });
 
 // ── Sync vs Sync W/ Deletion behaviour ────────────────────────────

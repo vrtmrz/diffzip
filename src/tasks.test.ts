@@ -297,6 +297,48 @@ Deno.test("detectChangedFiles: files inside backupFolder are excluded", async ()
     assertEquals(results.length, 0, "files inside backupFolder must be excluded");
 });
 
+Deno.test("detectChangedFiles: stat failures are skipped and logged", async () => {
+    const messages: string[] = [];
+    const vault: VaultReader = {
+        normalizePath: (p: string) => p,
+        isFileExists: async () => true,
+        stat: async () => false,
+        readBinary: async () => {
+            throw new Error("readBinary should not be called when stat fails");
+        },
+    };
+
+    const results = await collect(
+        detectChangedFiles(
+            false, false, mockProgress(), mockProgress(), () => {},
+            {}, ["statless.md"], vault, "backups", (msg) => messages.push(msg), () => {}, () => {}, "/", baseSettings, today,
+        ),
+    );
+
+    assertEquals(results.length, 0, "stat failure should not yield a file");
+    assertEquals(messages, ["Archiving: Could not read stat statless.md"], "stat failure should be logged");
+});
+
+Deno.test("detectChangedFiles: readBinary failures are skipped and logged", async () => {
+    const messages: string[] = [];
+    const vault: VaultReader = {
+        normalizePath: (p: string) => p,
+        isFileExists: async () => true,
+        stat: async () => ({ mtime: 1000 }),
+        readBinary: async () => false,
+    };
+
+    const results = await collect(
+        detectChangedFiles(
+            false, false, mockProgress(), mockProgress(), () => {},
+            {}, ["unreadable.md"], vault, "backups", (msg) => messages.push(msg), () => {}, () => {}, "/", baseSettings, today,
+        ),
+    );
+
+    assertEquals(results.length, 0, "read failure should not yield a file");
+    assertEquals(messages, ["Archiving: Could not read unreadable.md"], "read failure should be logged");
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // packBatches
 // ─────────────────────────────────────────────────────────────────────────────
