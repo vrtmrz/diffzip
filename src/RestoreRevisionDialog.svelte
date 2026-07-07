@@ -2,7 +2,7 @@
     import { onDestroy } from "svelte";
     import type DiffZipBackupPlugin from "../main.ts";
     import type { FileInfos } from "./types.ts";
-    import { LATEST } from "./RestoreView.ts";
+    import { LATEST } from "./restoreConstants.ts";
 
     type RestoreMode = "new" | "all" | "all-delete";
     type Row = {
@@ -51,6 +51,7 @@
     let applying = $state(false);
     let mode = $state<RestoreMode>("new");
     let prefix = $state("");
+    let restorePoint = $state(0);
 
     let searchTimeoutId: number | undefined = undefined;
     function handleSearchInput(e: Event) {
@@ -230,6 +231,19 @@
 
     const selectedCount = $derived(rows.filter((r) => r.selected !== 0).length);
 
+    const restorePoints = $derived.by(() => {
+        const points = new Map<number, string>();
+        for (const row of rows) {
+            for (const rev of row.history) {
+                if (!Number.isFinite(rev.ts)) continue;
+                points.set(rev.ts, rev.modified);
+            }
+        }
+        return [...points.entries()]
+            .map(([ts, modified]) => ({ ts, modified }))
+            .sort((a, b) => b.ts - a.ts);
+    });
+
     function setSelected(filename: string, selected: number) {
         const row = rows.find((r) => r.filename === filename);
         if (row) {
@@ -237,8 +251,21 @@
         }
     }
 
-    function selectAllLatest() {
-        for (const r of rows) {
+    function rowMatchesCurrentFilter(row: Row): boolean {
+        if (!showUnselected && row.selected === 0) {
+            return false;
+        }
+        const q = searchDebounced.trim().toLowerCase();
+        if (!q) return true;
+        return (
+            row.filename.toLowerCase().includes(q) ||
+            row.latestZip.toLowerCase().includes(q) ||
+            row.latestModified.toLowerCase().includes(q)
+        );
+    }
+
+    function selectLatest(targetRows: Row[]) {
+        for (const r of targetRows) {
             const targetVal = r.history.length > 0 ? LATEST : 0;
             if (r.selected !== targetVal) {
                 r.selected = targetVal;
@@ -246,24 +273,31 @@
         }
     }
 
-    function selectFilteredLatest() {
-        const visibleFiles = new Set<string>();
-        const collectFiles = (node: TreeNode) => {
-            if (node.type === "file") {
-                visibleFiles.add(node.id);
-            } else {
-                node.children.forEach(collectFiles);
-            }
-        };
-        visibleNodes.forEach(collectFiles);
+    function selectAllLatest() {
+        selectLatest(rows);
+    }
 
-        for (const r of rows) {
-            if (visibleFiles.has(r.filename)) {
-                const targetVal = r.history.length > 0 ? LATEST : 0;
-                if (r.selected !== targetVal) {
-                    r.selected = targetVal;
-                }
-            }
+    function selectFilteredLatest() {
+        selectLatest(rows.filter(rowMatchesCurrentFilter));
+    }
+
+    function filteredRows(): Row[] {
+        return rows.filter(rowMatchesCurrentFilter);
+    }
+
+    function selectFilteredAtRestorePoint() {
+        selectRowsAtRestorePoint(filteredRows());
+    }
+
+    function selectAllAtRestorePoint() {
+        selectRowsAtRestorePoint(rows);
+    }
+
+    function selectRowsAtRestorePoint(targetRows: Row[]) {
+        if (restorePoint === 0) return;
+        for (const row of targetRows) {
+            const revision = row.history.find((rev) => rev.ts <= restorePoint);
+            row.selected = revision?.ts ?? 0;
         }
     }
 
@@ -397,6 +431,8 @@
         <button onclick={clearSelection}>Clear</button>
         <button onclick={selectFilteredLatest}>Select Filtered Latest</button>
         <button onclick={selectAllLatest}>Select All Latest</button>
+        <button onclick={selectFilteredAtRestorePoint} disabled={restorePoint === 0}>Select Filtered at Point</button>
+        <button onclick={selectAllAtRestorePoint} disabled={restorePoint === 0}>Select All at Point</button>
         <button onclick={expandAll}>Expand All</button>
         <button onclick={collapseAll}>Collapse All</button>
     </div>
@@ -408,6 +444,15 @@
                 <option value="new">Only new</option>
                 <option value="all">All</option>
                 <option value="all-delete">All and delete extra</option>
+            </select>
+        </label>
+        <label>
+            Restore point
+            <select bind:value={restorePoint}>
+                <option value={0}>Latest</option>
+                {#each restorePoints as point}
+                    <option value={point.ts}>{formatDate(point.modified)}</option>
+                {/each}
             </select>
         </label>
         <label class="diffzip-restore-prefix">

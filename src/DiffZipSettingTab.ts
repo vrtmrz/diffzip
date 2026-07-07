@@ -59,6 +59,16 @@ export class DiffZipSettingTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(containerEl)
+            .setName("Show legacy commands")
+            .setDesc("Show older command palette entries for direct backup and restore workflows. Reload the plugin to apply this command list change.")
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.showLegacyCommands).onChange(async (value) => {
+                    this.plugin.settings.showLegacyCommands = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
         new Setting(containerEl).setName("Backup Destination").setHeading();
         const dropDownRemote: Record<string, string> = {
             "": "Inside the vault",

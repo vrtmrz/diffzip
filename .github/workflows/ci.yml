@@ -35,5 +35,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
+      - name: UI tests
+        run: npm run test:ui
+
+      - name: Deno tests
         run: deno task test
