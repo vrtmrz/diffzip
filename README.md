@@ -70,6 +70,27 @@ If ZIP encryption is configured, each written backup file is encrypted and must 
 
 Older direct backup variants, such as only-new and non-destructive backup, are available as legacy commands when `Show legacy commands` is enabled.
 
+`Auto backup style` applies only to backups started automatically by `Start backup at launch`.
+The command palette item `Create Differential Backup` always uses the standard differential behaviour described above.
+If you enable legacy commands, the legacy backup commands explicitly choose their own behaviour and do not inherit `Auto backup style`.
+
+Backup behaviour summary:
+
+| Behaviour | Includes changed files | Skips files whose modified time did not advance | Records locally deleted files as deletion entries |
+| --------- | ---------------------- | ----------------------------------------------- | ------------------------------------------------- |
+| Standard differential | Yes | No | Yes |
+| Only new | Yes | Yes | Yes |
+| Non-destructive | Yes | No | No |
+| Non-destructive only newer files | Yes | Yes | No |
+
+`Auto backup style` maps to these behaviours when `Start backup at launch` is enabled:
+
+| Auto backup style | Behaviour |
+| ----------------- | --------- |
+| `Full` | Standard differential |
+| `Only New` | Only new |
+| `Non-destructive` | Non-destructive only newer files |
+
 ### Restore files
 1. Perform `Restore from Backup` from the command palette.
 2. Check the files or folders you want to restore.
@@ -132,7 +153,7 @@ Legacy command meanings:
 | Key                                  | Description                                                                                                                                                                             |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Start backup at launch               | When the plug-in has been loaded, Differential backup will be created automatically.                                                                                                    |
-| Auto backup style | Check differences to... `Full` to all files, `Only new` to the files which were newer than the backup, `Non-destructive` as same as Only new but not includes the deletion. |
+| Auto backup style | Chooses the behaviour used only by `Start backup at launch`. It does not change the command palette item `Create Differential Backup`. |
 | Include hidden folders               | Backup hidden files and folders too. `node_modules`, `.git`, Obsidian trash, and workspace files are still ignored.                                                                     |
 | Default destructive sync actions     | On selective sync screen, when enabled, `Delete` defaults to `Fetch` and `Extra (Delete)` defaults to `Send`.                                                                         |
 | Show legacy commands                 | Show older command palette entries for direct backup and restore workflows. Reload the plugin after changing this option.                                                              |
