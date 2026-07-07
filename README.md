@@ -14,7 +14,7 @@ We can store all the files which have been modified, into a ZIP file.
 
 ### Running tests
 
-The test suite uses Deno.
+The core TypeScript test suite uses Deno.
 
 ```sh
 deno task test
@@ -24,6 +24,18 @@ To run tests with coverage:
 
 ```sh
 deno task test:coverage
+```
+
+Svelte UI component tests use Vitest.
+
+```sh
+npm run test:ui
+```
+
+To run UI tests in watch mode:
+
+```sh
+npm run test:ui:watch
 ```
 
 Some ZIP compatibility tests use external command-line tools when they are available in `PATH`:
@@ -71,6 +83,7 @@ The restore dialog shows backup history as a searchable file tree.
 - Check a folder row to select or clear all files under that folder.
 - Use `Search` with `Select Filtered Latest` to select only matching files.
 - Use `Restore point` with `Select Filtered at Point` or `Select All at Point` to select the latest revision at or before a specific time.
+- Disable `Show unselected` to focus the list and filtered bulk actions on files that are already selected.
 - `Restore Mode` controls how existing local files are handled:
   - `Only new`: restore only files that do not exist locally, or files whose backup revision is newer than the local file.
   - `All`: restore selected files even when local files already exist.

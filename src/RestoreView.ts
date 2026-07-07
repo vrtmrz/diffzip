@@ -2,10 +2,10 @@ import { Modal, type App } from "obsidian";
 import { mount, unmount } from "svelte";
 import RestoreRevisionDialogComponent from "./RestoreRevisionDialog.svelte";
 import type DiffZipBackupPlugin from "../main.ts";
+import { LATEST } from "./restoreConstants.ts";
 
 export const VIEW_TYPE_RESTORE = "diffzip-view-restore";
-
-export const LATEST = Number.MAX_SAFE_INTEGER;
+export { LATEST };
 
 export class RestoreDialog extends Modal {
     constructor(

@@ -2,7 +2,7 @@
     import { onDestroy } from "svelte";
     import type DiffZipBackupPlugin from "../main.ts";
     import type { FileInfos } from "./types.ts";
-    import { LATEST } from "./RestoreView.ts";
+    import { LATEST } from "./restoreConstants.ts";
 
     type RestoreMode = "new" | "all" | "all-delete";
     type Row = {
@@ -251,8 +251,21 @@
         }
     }
 
-    function selectAllLatest() {
-        for (const r of rows) {
+    function rowMatchesCurrentFilter(row: Row): boolean {
+        if (!showUnselected && row.selected === 0) {
+            return false;
+        }
+        const q = searchDebounced.trim().toLowerCase();
+        if (!q) return true;
+        return (
+            row.filename.toLowerCase().includes(q) ||
+            row.latestZip.toLowerCase().includes(q) ||
+            row.latestModified.toLowerCase().includes(q)
+        );
+    }
+
+    function selectLatest(targetRows: Row[]) {
+        for (const r of targetRows) {
             const targetVal = r.history.length > 0 ? LATEST : 0;
             if (r.selected !== targetVal) {
                 r.selected = targetVal;
@@ -260,38 +273,24 @@
         }
     }
 
-    function selectFilteredLatest() {
-        const visibleFiles = new Set<string>();
-        const collectFiles = (node: TreeNode) => {
-            if (node.type === "file") {
-                visibleFiles.add(node.id);
-            } else {
-                node.children.forEach(collectFiles);
-            }
-        };
-        visibleNodes.forEach(collectFiles);
-
-        for (const r of rows) {
-            if (visibleFiles.has(r.filename)) {
-                const targetVal = r.history.length > 0 ? LATEST : 0;
-                if (r.selected !== targetVal) {
-                    r.selected = targetVal;
-                }
-            }
-        }
+    function selectAllLatest() {
+        selectLatest(rows);
     }
 
-    function visibleFileSet(): Set<string> {
-        const visibleFiles = new Set<string>();
-        const collectFiles = (node: TreeNode) => {
-            if (node.type === "file") {
-                visibleFiles.add(node.id);
-            } else {
-                node.children.forEach(collectFiles);
-            }
-        };
-        visibleNodes.forEach(collectFiles);
-        return visibleFiles;
+    function selectFilteredLatest() {
+        selectLatest(rows.filter(rowMatchesCurrentFilter));
+    }
+
+    function filteredRows(): Row[] {
+        return rows.filter(rowMatchesCurrentFilter);
+    }
+
+    function selectFilteredAtRestorePoint() {
+        selectRowsAtRestorePoint(filteredRows());
+    }
+
+    function selectAllAtRestorePoint() {
+        selectRowsAtRestorePoint(rows);
     }
 
     function selectRowsAtRestorePoint(targetRows: Row[]) {
@@ -300,15 +299,6 @@
             const revision = row.history.find((rev) => rev.ts <= restorePoint);
             row.selected = revision?.ts ?? 0;
         }
-    }
-
-    function selectFilteredAtRestorePoint() {
-        const visibleFiles = visibleFileSet();
-        selectRowsAtRestorePoint(rows.filter((r) => visibleFiles.has(r.filename)));
-    }
-
-    function selectAllAtRestorePoint() {
-        selectRowsAtRestorePoint(rows);
     }
 
     function clearSelection() {
