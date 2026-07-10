@@ -53,6 +53,8 @@
         "vitest": "^4.1.10"
     },
     "dependencies": {
+        "@vrtmrz/obsidian-plugin-kit": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.1/vrtmrz-obsidian-plugin-kit-0.0.0.tgz",
+        "@vrtmrz/ui-interactions": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.1/vrtmrz-ui-interactions-0.0.0.tgz",
         "fflate": "^0.8.2",
         "octagonal-wheels": "^0.1.38"
     }
