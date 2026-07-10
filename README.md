@@ -47,6 +47,55 @@ Some ZIP compatibility tests use external command-line tools when they are avail
 
 Tests that require a missing tool are skipped.
 
+### UI interaction boundary
+
+Application workflows request reusable UI through an instance-scoped `UiInteractions` capability. The Obsidian plug-in creates one adapter for its own lifetime:
+
+```ts
+import { Plugin } from "obsidian";
+import { createObsidianUi, type UiInteractions } from "@vrtmrz/obsidian-plugin-kit/ui";
+
+class ExamplePlugin extends Plugin {
+    ui!: UiInteractions;
+
+    async onload() {
+        this.ui = createObsidianUi(this.app);
+    }
+}
+```
+
+Pass a stable interaction ID when a workflow requests a confirmation. Visible labels are separate from the returned action identifiers, and closing the dialog resolves to `null`:
+
+```ts
+const action = await ui.confirmAction(
+    {
+        title: "Restore confirmation",
+        message: "Restore the selected files?",
+        actions: ["restore", "cancel"] as const,
+        labels: { restore: "Restore", cancel: "Cancel" },
+        defaultAction: "cancel",
+    },
+    "restore-files",
+);
+```
+
+Application-flow tests use the App-free harness to provide responses and inspect the request transcript without opening Obsidian:
+
+```ts
+import { createUiTestHarness } from "@vrtmrz/obsidian-plugin-kit/testing";
+
+const harness = createUiTestHarness([
+    { kind: "confirmAction", interactionId: "restore-files", value: "restore" },
+]);
+
+await runRestoreFlow(harness.ui);
+harness.assertDone();
+```
+
+Scripted responses belong to each harness or plug-in instance. Do not store response queues in static members or module globals.
+
+Until the Fancy Kit packages are published to npm, `package.json` pins both preview tarballs from one GitHub pre-release. Update the two URLs together: the plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions@0.0.0` preview. The lockfile records each tarball integrity hash.
+
 ## How to use
 
 ### Making backup
