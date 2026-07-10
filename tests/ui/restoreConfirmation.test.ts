@@ -1,19 +1,13 @@
-import { createUiTestHarness } from "@vrtmrz/obsidian-plugin-kit/testing";
 import { describe, expect, it } from "vitest";
 import {
     confirmRestore,
     RESTORE_CONFIRMATION_INTERACTION_ID,
 } from "../../src/restoreConfirmation.ts";
+import { createRestoreConfirmationHarness } from "./harness.ts";
 
 describe("confirmRestore", () => {
     it("records the restore request and accepts the restore action", async () => {
-        const harness = createUiTestHarness([
-            {
-                kind: "confirmAction",
-                interactionId: RESTORE_CONFIRMATION_INTERACTION_ID,
-                value: "restore",
-            },
-        ]);
+        const harness = createRestoreConfirmationHarness("restore");
         const filesByZip = new Map([
             ["backup-2.zip", ["notes/b.md"]],
             ["backup-1.zip", ["notes/a.md"]],
@@ -40,13 +34,7 @@ describe("confirmRestore", () => {
     });
 
     it.each(["cancel", null] as const)("treats %s as cancellation", async (value) => {
-        const harness = createUiTestHarness([
-            {
-                kind: "confirmAction",
-                interactionId: RESTORE_CONFIRMATION_INTERACTION_ID,
-                value,
-            },
-        ]);
+        const harness = createRestoreConfirmationHarness(value);
 
         const confirmed = await confirmRestore(harness.ui, {
             processFileCount: 1,
