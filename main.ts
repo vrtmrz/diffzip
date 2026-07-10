@@ -10,7 +10,7 @@ import {
 import { type StorageAccessor } from "./src/StorageAccessor/StorageAccessor.ts";
 import { RestoreDialog } from "./src/RestoreView.ts";
 import { SyncRemoteDialog } from "./src/SyncRemoteDialog.ts";
-import { confirmWithMessage, askSelectString } from "./src/dialog.ts";
+import { askSelectString } from "./src/dialog.ts";
 import { Extractor } from "./src/Archive.ts";
 import { computeDigest, humanReadableSize, pieces, toArrayBuffer, ellipsisMiddle } from "./src/util.ts";
 import {
@@ -28,9 +28,12 @@ import { CombinedFragment } from "./src/CombinedFragment.ts";
 import { SyncProgressDialog } from "./src/SyncProgressDialog.ts";
 import { detectChangedFiles, planBatches, packBatches, type ArchivedBatch } from "./src/tasks.ts";
 import { delay } from "octagonal-wheels/promises";
+import { createObsidianUi, type UiInteractions } from "@vrtmrz/obsidian-plugin-kit/ui";
+import { confirmRestore } from "./src/restoreConfirmation.ts";
 
 export default class DiffZipBackupPlugin extends Plugin {
     settings!: DiffZipBackupSettings;
+    ui!: UiInteractions;
 
     get isMobile(): boolean {
         // @ts-ignore
@@ -770,30 +773,8 @@ export default class DiffZipBackupPlugin extends Plugin {
             this.logMessage(`Nothing to restore`);
             return;
         }
-        const detailFiles = `<details>
-
-${[...zipFileMap.entries()]
-    .map((e) => `${e[1].map((ee) => `- ${ee}  (${e[0]})`).join("\n")}\n`)
-    .sort((a, b) => a.localeCompare(b))
-    .join("")}
-
-
-</details>`;
-        const detailDeletedFiles = `<details>
-
-${deletingFiles.map((e) => `- ${e}`).join("\n")}
-
-</details>`;
-        const deleteMessage =
-            deleteMissing && deletingFiles.length > 0
-                ? `And ${deletingFiles.length} files will be deleted.\n${detailDeletedFiles}\n`
-                : "";
-        const message = `We have ${processFileCount} files to restore on ${zipFileMap.size} ZIPs. \n${detailFiles}\n${deleteMessage}Are you sure to proceed?`;
-        const RESTORE_BUTTON = "Yes, restore them!";
-        const CANCEL = "Cancel";
         if (
-            (await confirmWithMessage(this, "Restore Confirmation", message, [RESTORE_BUTTON, CANCEL], CANCEL)) !=
-            RESTORE_BUTTON
+            !(await confirmRestore(this.ui, { processFileCount, filesByZip: zipFileMap, deleteMissing, deletingFiles }))
         ) {
             this.logMessage(`Cancelled`);
             return;
@@ -805,6 +786,7 @@ ${deletingFiles.map((e) => `- ${e}`).join("\n")}
         // console.dir(zipFileMap);
     }
     async onload() {
+        this.ui = createObsidianUi(this.app);
         await this.loadSettings();
         if ("backupFolder" in this.settings) {
             this.settings.backupFolderMobile = this.settings.backupFolder as string;

@@ -12,40 +12,7 @@ We can store all the files which have been modified, into a ZIP file.
 
 ## Development
 
-### Running tests
-
-The core TypeScript test suite uses Deno.
-
-```sh
-deno task test
-```
-
-To run tests with coverage:
-
-```sh
-deno task test:coverage
-```
-
-Svelte UI component tests use Vitest.
-
-```sh
-npm run test:ui
-```
-
-To run UI tests in watch mode:
-
-```sh
-npm run test:ui:watch
-```
-
-Some ZIP compatibility tests use external command-line tools when they are available in `PATH`:
-
-- `unzip`
-- `7z`
-- `openssl`
-- Windows PowerShell `Expand-Archive`
-
-Tests that require a missing tool are skipped.
+Contributor setup, tests, architecture notes, and local real-Obsidian workflows are documented in [the developer guide](docs/devs.md).
 
 ## How to use
 
