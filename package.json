@@ -36,7 +36,7 @@
         "@types/node": "^22.19.19",
         "@typescript-eslint/eslint-plugin": "8.56.1",
         "@typescript-eslint/parser": "^8.56.1",
-        "@vrtmrz/obsidian-test-session": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.2/vrtmrz-obsidian-test-session-0.0.0.tgz",
+        "@vrtmrz/obsidian-test-session": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.5/vrtmrz-obsidian-test-session-0.1.0.tgz",
         "esbuild": "0.28.1",
         "esbuild-svelte": "^0.9.5",
         "eslint": "^9.39.3",
@@ -58,8 +58,8 @@
         "vitest": "^4.1.10"
     },
     "dependencies": {
-        "@vrtmrz/obsidian-plugin-kit": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.2/vrtmrz-obsidian-plugin-kit-0.0.0.tgz",
-        "@vrtmrz/ui-interactions": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.2/vrtmrz-ui-interactions-0.0.0.tgz",
+        "@vrtmrz/obsidian-plugin-kit": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.5/vrtmrz-obsidian-plugin-kit-0.1.0.tgz",
+        "@vrtmrz/ui-interactions": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-10.5/vrtmrz-ui-interactions-0.1.0.tgz",
         "fflate": "^0.8.2",
         "octagonal-wheels": "^0.1.38"
     }

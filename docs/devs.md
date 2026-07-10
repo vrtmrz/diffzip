@@ -64,4 +64,4 @@ Real Modal rendering and dismissal use the local-only Obsidian harness documente
 
 ## Fancy Kit previews
 
-Until the Fancy Kit packages are published to npm, `package.json` pins the required preview tarballs from one GitHub pre-release. Update all Fancy Kit URLs together. The plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions@0.0.0` preview, and the lockfile records each tarball integrity hash.
+Until the Fancy Kit packages are published to npm, `package.json` pins the required preview tarballs from one GitHub pre-release. Update all Fancy Kit URLs together. The plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions@0.1.0` preview, and the lockfile records each tarball integrity hash.
