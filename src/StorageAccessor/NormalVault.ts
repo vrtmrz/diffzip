@@ -1,12 +1,16 @@
-import { TFile, TFolder, type Stat } from "obsidian";
-import { FileType, StorageAccessorTypes } from "../storage.ts";
+import { normalizePath, TFile, TFolder, type Stat } from "obsidian";
 import { StorageAccessor } from "./StorageAccessor.ts";
+import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
 
 
 export class NormalVault extends StorageAccessor {
     type = StorageAccessorTypes.NORMAL;
 
     sep = "/"; // Always use / as separator on vault.
+
+    normalizePath(path: string): string {
+        return normalizePath(path);
+    }
 
     async createFolder(absolutePath: string): Promise<void> {
         await this.app.vault.createFolder(absolutePath);

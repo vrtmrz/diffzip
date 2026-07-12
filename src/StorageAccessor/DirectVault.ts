@@ -1,12 +1,16 @@
-import type { Stat } from "obsidian";
-import { FileType, StorageAccessorTypes } from "../storage.ts";
+import { normalizePath, type Stat } from "obsidian";
 import { StorageAccessor } from "./StorageAccessor.ts";
+import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
 
 
 export class DirectVault extends StorageAccessor {
     type = StorageAccessorTypes.DIRECT;
 
     sep = "/"; // Always use / as separator on vault.
+
+    normalizePath(path: string): string {
+        return normalizePath(path);
+    }
 
     async createFolder(absolutePath: string): Promise<void> {
         await this.app.vault.adapter.mkdir(absolutePath);

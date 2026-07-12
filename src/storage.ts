@@ -2,40 +2,21 @@
  * Abstract class for storage accessors and its implementations.
  */
 import type DiffZipBackupPlugin from "../main.ts";
-// Because of this is a type-only import.
-// eslint-disable-next-line import/no-nodejs-modules -- type only import of promises
-import type { promises } from "node:fs";
-import { OpenSSLCompat } from "octagonal-wheels/encryption";
 import { NormalVault } from "./StorageAccessor/NormalVault.ts";
 import { DirectVault } from "./StorageAccessor/DirectVault.ts";
 import { ExternalVaultFilesystem } from "./StorageAccessor/ExternalVaultFilesystem.ts";
 import { S3Bucket } from "./StorageAccessor/S3Bucket.ts";
 import type { StorageAccessor } from "./StorageAccessor/StorageAccessor.ts";
-export const decryptCompatOpenSSL = OpenSSLCompat.CBC.decryptCBC;
-export const encryptCompatOpenSSL = OpenSSLCompat.CBC.encryptCBC;
+import {
+    StorageAccessorTypes,
+    type StorageAccessorType,
+} from "./StorageAccessor/storage-contracts.ts";
 
-export enum FileType {
-    "Missing",
-    "File",
-    "Folder",
-}
-
-export type FsAPI = {
-    mkdir: typeof promises.mkdir;
-    writeFile: typeof promises.writeFile;
-    readFile: typeof promises.readFile;
-    stat: typeof promises.stat;
-    rm: typeof promises.rm;
-};
-
-export const StorageAccessorTypes = {
-    NORMAL: "normal",
-    DIRECT: "direct",
-    EXTERNAL: "external",
-    S3: "s3",
-} as const;
-
-export type StorageAccessorType = typeof StorageAccessorTypes[keyof typeof StorageAccessorTypes];
+export {
+    FileType,
+    StorageAccessorTypes,
+    type StorageAccessorType,
+} from "./StorageAccessor/storage-contracts.ts";
 
 export function getStorageTypeForBackupAccess(plugin: DiffZipBackupPlugin): StorageAccessorType {
     if (plugin.isDesktopMode) {
