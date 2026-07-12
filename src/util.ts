@@ -1,4 +1,5 @@
 import type { XByteArray } from "./types.ts";
+export { toArrayBuffer } from "octagonal-wheels/binary";
 
 export function* pieces(source: XByteArray, chunkSize: number): Generator<Uint8Array<ArrayBuffer>, void, void> {
     let offset = 0;
@@ -12,17 +13,6 @@ export async function computeDigest(data: XByteArray) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
     return hashHex;
-}
-
-export function toArrayBuffer(arr: Uint8Array<ArrayBuffer> | ArrayBuffer | DataView<ArrayBuffer>): ArrayBuffer {
-    if (arr instanceof Uint8Array) {
-        return arr.buffer;
-    }
-    if (arr instanceof DataView) {
-        return arr.buffer;
-    }
-
-    return arr;
 }
 
 export function humanReadableSize(bytes: number): string {

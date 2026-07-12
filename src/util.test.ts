@@ -24,6 +24,17 @@ Deno.test("toArrayBuffer: returns backing ArrayBuffer for supported binary views
     assert(toArrayBuffer(bytes.buffer) === bytes.buffer, "ArrayBuffer should be returned as-is");
 });
 
+Deno.test("toArrayBuffer: copies exactly the bytes visible through sliced views", () => {
+    const bytes = new Uint8Array([99, 1, 2, 3, 88]);
+    const sliceResult = toArrayBuffer(bytes.subarray(1, 4));
+    assertEquals([...new Uint8Array(sliceResult)], [1, 2, 3], "Uint8Array bounds should be preserved");
+    assert(sliceResult !== bytes.buffer, "a sliced Uint8Array should not expose its complete backing buffer");
+
+    const viewResult = toArrayBuffer(new DataView(bytes.buffer, 2, 2));
+    assertEquals([...new Uint8Array(viewResult)], [2, 3], "DataView bounds should be preserved");
+    assert(viewResult !== bytes.buffer, "a partial DataView should not expose its complete backing buffer");
+});
+
 Deno.test("humanReadableSize: formats edge cases and byte units", () => {
     assertEquals(humanReadableSize(Number.NaN), "0 B", "NaN should format as 0 B");
     assertEquals(humanReadableSize(-1), "0 B", "negative values should format as 0 B");
