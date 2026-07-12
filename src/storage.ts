@@ -10,13 +10,13 @@ import type { StorageAccessor } from "./StorageAccessor/StorageAccessor.ts";
 import {
     StorageAccessorTypes,
     type StorageAccessorType,
-} from "./StorageAccessor/storage-contracts.ts";
+} from "./StorageAccessor/storage-accessor-types.ts";
 
 export {
     FileType,
     StorageAccessorTypes,
     type StorageAccessorType,
-} from "./StorageAccessor/storage-contracts.ts";
+} from "./StorageAccessor/storage-accessor-types.ts";
 
 export function getStorageTypeForBackupAccess(plugin: DiffZipBackupPlugin): StorageAccessorType {
     if (plugin.isDesktopMode) {

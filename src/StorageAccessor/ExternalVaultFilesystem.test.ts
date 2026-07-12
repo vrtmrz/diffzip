@@ -1,7 +1,7 @@
 // eslint-disable-next-line import/no-nodejs-modules -- Electron file reads return Node Buffers.
 import { Buffer } from "node:buffer";
 import { ExternalVaultFilesystem } from "./ExternalVaultFilesystem.ts";
-import type { StorageAccessorHost } from "./storage-contracts.ts";
+import type { StorageAccessorHost } from "./storage-accessor-types.ts";
 
 declare const Deno: {
     test: (name: string, fn: () => void | Promise<void>) => void;

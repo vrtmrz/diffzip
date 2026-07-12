@@ -1,6 +1,6 @@
 import { normalizePath, TFile, TFolder, type Stat } from "obsidian";
 import { StorageAccessor } from "./StorageAccessor.ts";
-import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
+import { FileType, StorageAccessorTypes } from "./storage-accessor-types.ts";
 
 
 export class NormalVault extends StorageAccessor {

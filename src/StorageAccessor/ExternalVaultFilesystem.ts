@@ -2,7 +2,7 @@ import type { Stat } from "obsidian";
 // eslint-disable-next-line import/no-nodejs-modules -- Electron exposes the Node filesystem API used here.
 import type { promises } from "node:fs";
 import { StorageAccessor } from "./StorageAccessor.ts";
-import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
+import { FileType, StorageAccessorTypes } from "./storage-accessor-types.ts";
 import { toArrayBuffer } from "../util.ts";
 
 type FsAPI = Pick<typeof promises, "mkdir" | "writeFile" | "readFile" | "stat" | "rm">;

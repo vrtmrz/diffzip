@@ -2,7 +2,7 @@ import { S3 } from "@aws-sdk/client-s3";
 import { normalizePath, type Stat } from "obsidian";
 import { ObsHttpHandler } from "../ObsHttpHandler.ts";
 import { StorageAccessor } from "./StorageAccessor.ts";
-import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
+import { FileType, StorageAccessorTypes } from "./storage-accessor-types.ts";
 import { toArrayBuffer } from "../util.ts";
 
 

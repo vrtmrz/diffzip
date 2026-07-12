@@ -33,7 +33,6 @@ Deno.test("toArrayBuffer: copies exactly the bytes visible through sliced views"
     const viewResult = toArrayBuffer(new DataView(bytes.buffer, 2, 2));
     assertEquals([...new Uint8Array(viewResult)], [2, 3], "DataView bounds should be preserved");
     assert(viewResult !== bytes.buffer, "a partial DataView should not expose its complete backing buffer");
-
 });
 
 Deno.test("humanReadableSize: formats edge cases and byte units", () => {
