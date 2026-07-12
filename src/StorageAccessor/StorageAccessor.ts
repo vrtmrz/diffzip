@@ -4,7 +4,7 @@ import {
     type StorageAccessorHost,
     type StorageAccessorType,
     FileType,
-} from "./storage-contracts.ts";
+} from "./storage-accessor-types.ts";
 import { toArrayBuffer } from "../util.ts";
 
 const decryptCompatOpenSSL = OpenSSLCompat.CBC.decryptCBC;

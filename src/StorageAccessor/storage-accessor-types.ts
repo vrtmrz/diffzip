@@ -1,7 +1,11 @@
 import type { App } from "obsidian";
 import type { DiffZipBackupSettings } from "../types.ts";
 
-/** Minimal plug-in boundary required by storage accessor implementations. */
+/**
+ * DiffZip-owned context supplied to storage accessor implementations.
+ *
+ * This is an internal composition shape, not a platform-neutral storage contract.
+ */
 export interface StorageAccessorHost {
     readonly app: App;
     readonly settings: DiffZipBackupSettings;
