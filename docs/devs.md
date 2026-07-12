@@ -62,6 +62,6 @@ Scripted responses belong to each harness or plug-in instance. Do not store resp
 
 Real Modal rendering and dismissal use the local-only Obsidian harness documented in [`test/e2e-obsidian/README.md`](../test/e2e-obsidian/README.md). The real-device scenario deliberately does not configure a scripted UI driver.
 
-## Fancy Kit previews
+## Fancy Kit dependencies
 
-Until the Fancy Kit packages are published to npm, `package.json` pins the required preview tarballs from one GitHub pre-release. Update all Fancy Kit URLs together. The plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions@0.1.0` preview, and the lockfile records each tarball integrity hash.
+`package.json` pins the Fancy Kit packages and `octagonal-wheels` to exact npm versions so the tested dependency set remains reproducible. Review and update the four versions together when adopting a newer contract. The plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions` release, and the lockfile records each package integrity hash.
