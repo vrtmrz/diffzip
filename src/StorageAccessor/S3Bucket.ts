@@ -1,8 +1,8 @@
 import { S3 } from "@aws-sdk/client-s3";
-import type { Stat } from "obsidian";
+import { normalizePath, type Stat } from "obsidian";
 import { ObsHttpHandler } from "../ObsHttpHandler.ts";
-import { FileType, StorageAccessorTypes } from "../storage.ts";
 import { StorageAccessor } from "./StorageAccessor.ts";
+import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
 import { toArrayBuffer } from "../util.ts";
 
 
@@ -10,11 +10,15 @@ export class S3Bucket extends StorageAccessor {
     type = StorageAccessorTypes.S3;
     sep = "/";
 
+    normalizePath(path: string): string {
+        return normalizePath(path);
+    }
+
     createFolder(absolutePath: string): Promise<void> {
         // S3 does not have folder concept. So, we don't need to create folder.
         return Promise.resolve();
     }
-    ensureDirectory(fullPath: string): Promise<void> {
+    override ensureDirectory(fullPath: string): Promise<void> {
         return Promise.resolve();
     }
 

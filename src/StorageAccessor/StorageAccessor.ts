@@ -1,13 +1,19 @@
-import { normalizePath, type Stat } from "obsidian";
-import type DiffZipBackupPlugin from "../../main.ts";
-import { type StorageAccessorType, FileType, decryptCompatOpenSSL, encryptCompatOpenSSL } from "../storage.ts";
+import type { Stat } from "obsidian";
+import { OpenSSLCompat } from "octagonal-wheels/encryption";
+import {
+    type StorageAccessorHost,
+    type StorageAccessorType,
+    FileType,
+} from "./storage-contracts.ts";
 import { toArrayBuffer } from "../util.ts";
 
+const decryptCompatOpenSSL = OpenSSLCompat.CBC.decryptCBC;
+const encryptCompatOpenSSL = OpenSSLCompat.CBC.encryptCBC;
 
 export abstract class StorageAccessor {
     abstract type: StorageAccessorType;
     abstract sep: string;
-    public plugin: DiffZipBackupPlugin;
+    public plugin: StorageAccessorHost;
     get app() {
         return this.plugin.app;
     }
@@ -21,7 +27,7 @@ export abstract class StorageAccessor {
     }
     public isLocal: boolean = false;
 
-    constructor(plugin: DiffZipBackupPlugin, basePath?: string, isLocal?: boolean) {
+    constructor(plugin: StorageAccessorHost, basePath?: string, isLocal?: boolean) {
         this.basePath = basePath || "";
         this.plugin = plugin;
         this.isLocal = isLocal || false;
@@ -73,9 +79,7 @@ export abstract class StorageAccessor {
     abstract _readBinary(path: string, preventUseCache?: boolean): Promise<ArrayBuffer | false>;
     abstract deleteBinary(path: string): Promise<boolean>;
 
-    normalizePath(path: string): string {
-        return normalizePath(path);
-    }
+    abstract normalizePath(path: string): string;
     abstract stat(path: string): Promise<false | Stat>;
 
     async ensureDirectory(fullPath: string) {

@@ -1,8 +1,11 @@
 import type { Stat } from "obsidian";
-import { type FsAPI, FileType, StorageAccessorTypes } from "../storage.ts";
+// eslint-disable-next-line import/no-nodejs-modules -- Electron exposes the Node filesystem API used here.
+import type { promises } from "node:fs";
 import { StorageAccessor } from "./StorageAccessor.ts";
+import { FileType, StorageAccessorTypes } from "./storage-contracts.ts";
 import { toArrayBuffer } from "../util.ts";
 
+type FsAPI = Pick<typeof promises, "mkdir" | "writeFile" | "readFile" | "stat" | "rm">;
 
 export class ExternalVaultFilesystem extends StorageAccessor {
     type = StorageAccessorTypes.EXTERNAL;
@@ -21,7 +24,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
         await this.fsPromises.mkdir(absolutePath, { recursive: true });
     }
 
-    async ensureDirectory(fullPath: string) {
+    override async ensureDirectory(fullPath: string) {
         const delimiter = this.sep;
         const pathElements = fullPath.split(delimiter);
         pathElements.pop();
@@ -42,7 +45,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     async _readBinary(path: string): Promise<ArrayBuffer | false> {
         const buffer = await this.fsPromises.readFile(path);
-        return toArrayBuffer(buffer.buffer)
+        return toArrayBuffer(buffer);
     }
 
     async deleteBinary(path: string): Promise<boolean> {
