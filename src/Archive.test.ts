@@ -36,8 +36,7 @@ Deno.test("Archiver + Extractor: round-trip a single text file", async () => {
         },
     );
     extractor.addZippedContent(zipData, true);
-    // Give async callbacks time to settle
-    await new Promise((res) => setTimeout(res, 100));
+    await extractor.finalise();
 
     assertEquals(extracted["note.md"], "hello, world", "Extracted content must match original");
 });
@@ -63,7 +62,7 @@ Deno.test("Archiver + Extractor: round-trip multiple files", async () => {
         },
     );
     extractor.addZippedContent(zipData, true);
-    await new Promise((res) => setTimeout(res, 100));
+    await extractor.finalise();
 
     for (const [path, text] of Object.entries(files)) {
         assertEquals(extracted[path], text, `Extracted content of ${path} must match original`);
@@ -84,7 +83,7 @@ Deno.test("Extractor: filter function skips unwanted files", async () => {
         },
     );
     extractor.addZippedContent(zipData, true);
-    await new Promise((res) => setTimeout(res, 100));
+    await extractor.finalise();
 
     assert("keep.md" in extracted, "keep.md must be extracted");
     assert(!("skip.md" in extracted), "skip.md must be skipped");
@@ -132,7 +131,7 @@ Deno.test("Archiver: large file triggers multi-chunk path and progress callback"
         },
     );
     extractor.addZippedContent(zipData, true);
-    await new Promise((res) => setTimeout(res, 500));
+    await extractor.finalise();
 
     assert("large.bin" in extracted, "large.bin must be extracted");
     assertEquals(extracted["large.bin"].length, SIZE, "Extracted size must match original");
@@ -158,9 +157,49 @@ Deno.test("Extractor: finalise() correctly ends streamed zip input", async () =>
     const half = Math.floor(zipData.length / 2);
     extractor.addZippedContent(zipData.slice(0, half), false);
     extractor.addZippedContent(zipData.slice(half), false);
-    extractor.finalise();
-
-    await new Promise((res) => setTimeout(res, 200));
+    await extractor.finalise();
 
     assertEquals(extracted["stream.md"], "streamed content", "Streamed extraction via finalise() must match original");
+});
+
+Deno.test("Extractor: finalise() waits for an asynchronous extraction callback", async () => {
+    const archiver = new Archiver();
+    archiver.addTextFile("delayed content", "delayed.md");
+    const zipData = await archiver.finalize();
+
+    let callbackFinished = false;
+    const extractor = new Extractor(
+        () => true,
+        async () => {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            callbackFinished = true;
+        },
+    );
+    extractor.addZippedContent(zipData, true);
+    await extractor.finalise();
+
+    assert(callbackFinished, "finalise() must not resolve before the extraction callback finishes");
+});
+
+Deno.test("Extractor: finalise() propagates extraction callback errors", async () => {
+    const archiver = new Archiver();
+    archiver.addTextFile("content", "failure.md");
+    const zipData = await archiver.finalize();
+
+    const expected = new Error("write failed");
+    const extractor = new Extractor(
+        () => true,
+        async () => {
+            throw expected;
+        },
+    );
+    extractor.addZippedContent(zipData, true);
+
+    let actual: unknown;
+    try {
+        await extractor.finalise();
+    } catch (error: unknown) {
+        actual = error;
+    }
+    assert(actual === expected, "finalise() must propagate the extraction callback error");
 });

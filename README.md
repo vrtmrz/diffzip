@@ -23,6 +23,7 @@ Contributor setup, tests, architecture notes, and local real-Obsidian workflows 
 
 `Create Differential Backup` compares the current vault with `backupinfo.md` and writes a new ZIP only for changes.
 Files under the configured backup folder and restore folder are skipped.
+While a backup, restore, or selective-sync Fetch or Send operation is running, DiffZip requests a screen wake lock on supported devices. The request is best effort: the browser or operating system can deny or release it, and it does not keep DiffZip running in the background. DiffZip releases its request when the operation completes, is cancelled, or fails.
 It records:
 
 - new files

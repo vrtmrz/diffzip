@@ -30,10 +30,16 @@ import { detectChangedFiles, planBatches, packBatches, type ArchivedBatch } from
 import { delay } from "octagonal-wheels/promises";
 import { createObsidianUi, type UiInteractions } from "@vrtmrz/obsidian-plugin-kit/ui";
 import { confirmRestore } from "./src/restoreConfirmation.ts";
+import { createDiffZipWakeLock, runWithDiffZipWakeLock, type DiffZipWakeLockLabel } from "./src/wakeLock.ts";
 
 export default class DiffZipBackupPlugin extends Plugin {
     settings!: DiffZipBackupSettings;
     ui!: UiInteractions;
+    readonly operationWakeLock = createDiffZipWakeLock();
+
+    runWhileAwake<T>(label: DiffZipWakeLockLabel, task: () => T | PromiseLike<T>): Promise<T> {
+        return runWithDiffZipWakeLock(this.operationWakeLock, label, task);
+    }
 
     get isMobile(): boolean {
         // @ts-ignore
@@ -195,6 +201,12 @@ export default class DiffZipBackupPlugin extends Plugin {
     }
 
     async createZip(verbosity: boolean, onlyNew = false, skipDeleted: boolean = false) {
+        return await this.runWhileAwake("differential-backup", () =>
+            this.createZipWithoutWakeLock(verbosity, onlyNew, skipDeleted)
+        );
+    }
+
+    private async createZipWithoutWakeLock(verbosity: boolean, onlyNew: boolean, skipDeleted: boolean) {
         const key = "proc-zip-process-" + Date.now();
         const log = verbosity
             ? (msg: string, key?: string) => this.logWrite(msg, key)
@@ -400,6 +412,17 @@ export default class DiffZipBackupPlugin extends Plugin {
         restoreAs: string | undefined = undefined,
         restorePrefix: string = ""
     ): Promise<void> {
+        return await this.runWhileAwake("archive-restore", () =>
+            this.extractWithoutWakeLock(zipFile, extractFiles, restoreAs, restorePrefix)
+        );
+    }
+
+    private async extractWithoutWakeLock(
+        zipFile: string,
+        extractFiles: string | string[],
+        restoreAs: string | undefined,
+        restorePrefix: string
+    ): Promise<void> {
         const hasMultipleSupplied = Array.isArray(extractFiles);
         const zipPath = this.backups.normalizePath(`${this.backupFolder}${this.sep}${zipFile}`);
         const zipF = await this.backups.isExists(zipPath);
@@ -421,6 +444,7 @@ export default class DiffZipBackupPlugin extends Plugin {
         }
         if (files.length == 0) {
             this.logMessage("Archived ZIP files were not found!");
+            return;
         }
         const restored = [] as string[];
 
@@ -457,6 +481,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                 extractor.addZippedContent(chunk);
             }
         }
+        await extractor.finalise();
     }
 
     async selectAndRestore() {
@@ -786,6 +811,9 @@ export default class DiffZipBackupPlugin extends Plugin {
         // console.dir(zipFileMap);
     }
     async onload() {
+        this.register(() => {
+            void this.operationWakeLock.dispose();
+        });
         this.ui = createObsidianUi(this.app);
         await this.loadSettings();
         if ("backupFolder" in this.settings) {

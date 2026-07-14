@@ -109,6 +109,9 @@ export class Extractor {
     _zipFile: fflate.Unzip;
     _isFileShouldBeExtracted: (file: fflate.UnzipFile) => boolean | Promise<boolean>;
     _onExtracted: (filename: string, content: XByteArray) => Promise<void>;
+    _pendingFiles = new Set<Promise<void>>();
+    _failures: unknown[] = [];
+    _inputFinalised = false;
 
     constructor(isFileShouldBeExtracted: Extractor["_isFileShouldBeExtracted"], callback: Extractor["_onExtracted"]) {
         const unzipper = new fflate.Unzip();
@@ -117,34 +120,64 @@ export class Extractor {
         this._isFileShouldBeExtracted = isFileShouldBeExtracted;
         this._onExtracted = callback;
 
-        const onFile = async (file: fflate.UnzipFile) => {
-            if (await this._isFileShouldBeExtracted(file)) {
-                const data: XByteArray[] = [];
-                const onData = async (err: fflate.FlateError | null, dat: Uint8Array, isFinal: boolean) => {
-                    if (err) {
-                        console.error("Error extracting file", err);
-                        return;
-                    }
-                    if (dat && dat.length > 0) data.push(new Uint8Array(dat));
-
-                    if (isFinal) {
-                        const total = new Blob(data, { type: "application/octet-stream" });
-                        const result = new Uint8Array(await total.arrayBuffer());
-                        await this._onExtracted(file.name, result);
-                    }
-                };
-                file.ondata = (err, dat, isFinal) => void onData(err, dat, isFinal);
-                file.start();
-            }
-        };
-        unzipper.onfile = (file) => void onFile(file);
+        unzipper.onfile = (file) => this.trackFile(file);
     }
 
     addZippedContent(data: XByteArray, isFinal = false) {
         this._zipFile.push(data, isFinal);
+        this._inputFinalised ||= isFinal;
     }
 
-    finalise() {
-        this._zipFile.push(new Uint8Array(), true);
+    /** Finalise the ZIP input and wait for every selected file callback to finish. */
+    async finalise(): Promise<void> {
+        if (!this._inputFinalised) {
+            this._zipFile.push(new Uint8Array(), true);
+            this._inputFinalised = true;
+        }
+        while (this._pendingFiles.size > 0) {
+            await Promise.all(this._pendingFiles);
+        }
+        if (this._failures.length > 0) {
+            throw this._failures[0];
+        }
+    }
+
+    private trackFile(file: fflate.UnzipFile): void {
+        let tracked: Promise<void>;
+        tracked = this.extractFile(file)
+            .catch((error: unknown) => {
+                this._failures.push(error);
+            })
+            .finally(() => {
+                this._pendingFiles.delete(tracked);
+            });
+        this._pendingFiles.add(tracked);
+    }
+
+    private async extractFile(file: fflate.UnzipFile): Promise<void> {
+        if (!(await this._isFileShouldBeExtracted(file))) {
+            return;
+        }
+        const data: XByteArray[] = [];
+        await new Promise<void>((resolve, reject) => {
+            file.ondata = (err, dat, isFinal) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                if (dat && dat.length > 0) {
+                    data.push(new Uint8Array(dat));
+                }
+                if (!isFinal) {
+                    return;
+                }
+                const total = new Blob(data, { type: "application/octet-stream" });
+                void total
+                    .arrayBuffer()
+                    .then((buffer) => this._onExtracted(file.name, new Uint8Array(buffer)))
+                    .then(resolve, reject);
+            };
+            file.start();
+        });
     }
 }

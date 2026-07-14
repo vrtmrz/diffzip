@@ -204,6 +204,10 @@ export class SyncRemoteDialog extends Modal {
     }
 
     async applyFetch(fetchItems: SyncItem[]) {
+        return await this.plugin.runWhileAwake("selective-sync-fetch", () => this.applyFetchWithoutWakeLock(fetchItems));
+    }
+
+    private async applyFetchWithoutWakeLock(fetchItems: SyncItem[]) {
         const totalOps = fetchItems.length;
         const progress = new ProgressFragment({
             title: "Mirroring remote...",
@@ -243,29 +247,31 @@ export class SyncRemoteDialog extends Modal {
     }
 
     async applySend(sendItems: SyncItem[]) {
-        const { sentCount } = await executeSend(
-            sendItems,
-            this.plugin.vaultAccess,
-            this.plugin.backups,
-            () => this.plugin.loadTOC(),
-            (i) => this.makeSyncZipName(i),
-            {
-                backupFolder: this.plugin.backupFolder,
-                sep: this.plugin.sep,
-                maxFilesInZip: this.plugin.settings.maxFilesInZip,
-                maxTotalSizeInZip:
-                    this.plugin.settings.maxTotalSizeInZip > 0
-                        ? this.plugin.settings.maxTotalSizeInZip * 1024 * 1024
-                        : 0,
-                maxSize:
-                    this.plugin.settings.maxSize > 0
-                        ? this.plugin.settings.maxSize * 1024 * 1024
-                        : 0,
-                serializeYaml: stringifyYaml,
-                debugExecutionToConsole: DEBUG_SYNC_LOG,
-            },
-        );
-        return sentCount;
+        return await this.plugin.runWhileAwake("selective-sync-send", async () => {
+            const { sentCount } = await executeSend(
+                sendItems,
+                this.plugin.vaultAccess,
+                this.plugin.backups,
+                () => this.plugin.loadTOC(),
+                (i) => this.makeSyncZipName(i),
+                {
+                    backupFolder: this.plugin.backupFolder,
+                    sep: this.plugin.sep,
+                    maxFilesInZip: this.plugin.settings.maxFilesInZip,
+                    maxTotalSizeInZip:
+                        this.plugin.settings.maxTotalSizeInZip > 0
+                            ? this.plugin.settings.maxTotalSizeInZip * 1024 * 1024
+                            : 0,
+                    maxSize:
+                        this.plugin.settings.maxSize > 0
+                            ? this.plugin.settings.maxSize * 1024 * 1024
+                            : 0,
+                    serializeYaml: stringifyYaml,
+                    debugExecutionToConsole: DEBUG_SYNC_LOG,
+                },
+            );
+            return sentCount;
+        });
     }
 
     onClose() {
