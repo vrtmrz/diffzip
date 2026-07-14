@@ -1,6 +1,6 @@
 {
     "name": "diffzip",
-    "version": "0.1.9-wakelock.1",
+    "version": "0.1.9",
     "description": "Differential ZIP Backup",
     "main": "main.js",
     "scripts": {
