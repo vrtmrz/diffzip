@@ -62,6 +62,6 @@
         "@vrtmrz/obsidian-plugin-kit": "0.1.0",
         "@vrtmrz/ui-interactions": "0.1.0",
         "fflate": "^0.8.2",
-        "octagonal-wheels": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-14.1/octagonal-wheels-0.1.51-preview.0.tgz"
+        "octagonal-wheels": "0.1.51"
     }
 }
