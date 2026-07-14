@@ -65,3 +65,9 @@ Real Modal rendering and dismissal use the local-only Obsidian harness documente
 ## Fancy Kit dependencies
 
 `package.json` pins the Fancy Kit packages and `octagonal-wheels` to exact npm versions so the tested dependency set remains reproducible. Review and update the four versions together when adopting a newer contract. The plug-in kit declares an exact dependency on the matching `@vrtmrz/ui-interactions` release, and the lockfile records each package integrity hash.
+
+## Screen wake lock
+
+The plug-in owns one lifecycle-aware screen wake-lock manager. Differential backups, archive restore, and the Fetch and Send phases of selective sync use its closure-based runner, so normal completion, cancellation, and errors release their logical lease automatically. Overlapping and nested operations share the platform wake lock. Confirmation dialogues do not acquire a lease; restore protection starts only when archive input and Vault output begin.
+
+The Screen Wake Lock API is best effort. Consumer workflows must continue when it is unavailable or rejected, and must not rely on it for background execution. Dispose the manager when the plug-in unloads. Keep the manager injectable through the focused helper in `src/wakeLock.ts`; App-free tests use that boundary instead of constructing the Obsidian plug-in.

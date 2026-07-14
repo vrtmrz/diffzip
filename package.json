@@ -12,6 +12,7 @@
         "test:ui:watch": "vitest --config vitest.config.ts",
         "check:e2e:obsidian": "tsc -p test/e2e-obsidian/tsconfig.json",
         "test:e2e:obsidian:restore-confirmation": "npm run build && tsx test/e2e-obsidian/restore-confirmation.mts",
+        "test:e2e:obsidian:wake-lock": "npm run build && tsx test/e2e-obsidian/wake-lock.mts",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "pretty": "npm run prettyNoWrite -- --write --log-level error",
         "prettyCheck": "npm run prettyNoWrite -- --check",
@@ -61,6 +62,6 @@
         "@vrtmrz/obsidian-plugin-kit": "0.1.0",
         "@vrtmrz/ui-interactions": "0.1.0",
         "fflate": "^0.8.2",
-        "octagonal-wheels": "0.1.48"
+        "octagonal-wheels": "https://github.com/vrtmrz/fancy-kit/releases/download/consumer-preview-2026-07-14.1/octagonal-wheels-0.1.51-preview.0.tgz"
     }
 }
