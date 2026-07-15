@@ -443,8 +443,9 @@ export default class DiffZipBackupPlugin extends Plugin {
             } while (hasNext);
         }
         if (files.length == 0) {
-            this.logMessage("Archived ZIP files were not found!");
-            return;
+            const message = `Archived ZIP files were not found: ${zipFile}`;
+            this.logMessage(message);
+            throw new Error(message);
         }
         const restored = [] as string[];
 
@@ -463,7 +464,9 @@ export default class DiffZipBackupPlugin extends Plugin {
                     const files = restored.slice(-5).join("\n");
                     this.logMessage(`${restored.length} files have been restored! \n${files}\n...`, "proc-zip-extract");
                 } else {
-                    this.logMessage(`Creating or Overwriting ${file} has been failed!`);
+                    const message = `Creating or overwriting ${file} failed`;
+                    this.logMessage(message);
+                    throw new Error(message);
                 }
             }
         );
@@ -473,8 +476,9 @@ export default class DiffZipBackupPlugin extends Plugin {
             this.logMessage(`Processing ${file}...`, "proc-zip-export-processing");
             const binary = await this.backups.readBinary(file);
             if (binary == null || binary === false) {
-                this.logMessage(`Could not read ${file}`);
-                return;
+                const message = `Could not read ${file}`;
+                this.logMessage(message);
+                throw new Error(message);
             }
             const chunks = pieces(new Uint8Array(binary), size);
             for (const chunk of chunks) {
@@ -482,6 +486,20 @@ export default class DiffZipBackupPlugin extends Plugin {
             }
         }
         await extractor.finalise();
+        const expectedRestorePaths = hasMultipleSupplied
+            ? extractFiles.map((file) => `${restorePrefix}${file}`)
+            : [restoreAs ?? extractFiles];
+        const missingRestorePaths = expectedRestorePaths.filter((file) => !restored.includes(file));
+        if (missingRestorePaths.length > 0) {
+            const preview = missingRestorePaths.slice(0, 5).join(", ");
+            const remaining = missingRestorePaths.length - 5;
+            const noun = missingRestorePaths.length === 1 ? "file" : "files";
+            const message = `The archive did not restore ${missingRestorePaths.length} requested ${noun}: ${preview}${
+                remaining > 0 ? `, and ${remaining} more` : ""
+            }`;
+            this.logMessage(message);
+            throw new Error(message);
+        }
     }
 
     async selectAndRestore() {
@@ -618,6 +636,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             }
             const zipMap = new Map<string, string[]>();
             for (const [filename, fileInfo] of fileMap) {
+                if (fileInfo.missing) {
+                    this.logWrite(`${filename}: is a deletion record. Skipping on non-destructive restoration`);
+                    continue;
+                }
                 const path = fileInfo.zipName;
                 const arr = zipMap.get(path) ?? [];
                 arr.push(filename);
@@ -629,6 +651,10 @@ export default class DiffZipBackupPlugin extends Plugin {
             // 	fileMap.set(path, zipName);
             // }
             const zipList = [...zipMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            if (zipList.length == 0) {
+                this.logMessage(`Nothing to restore`);
+                return;
+            }
             const filesCount = zipList.reduce((a, b) => a + b[1].length, 0);
             if (
                 (await askSelectString(
@@ -715,6 +741,28 @@ export default class DiffZipBackupPlugin extends Plugin {
         deleteMissing: boolean = false,
         fileFilter: Record<string, number> | undefined = undefined,
         prefix: string = ""
+    ): Promise<void> {
+        const { deletingFiles, processFileCount, zipFileMap } = await this.runWhileAwake("archive-restore", () =>
+            this.planVaultRestore(onlyNew, deleteMissing, fileFilter, prefix)
+        );
+        if (processFileCount == 0 && deletingFiles.length == 0) {
+            this.logMessage(`Nothing to restore`);
+            return;
+        }
+        if (
+            !(await confirmRestore(this.ui, { processFileCount, filesByZip: zipFileMap, deleteMissing, deletingFiles }))
+        ) {
+            this.logMessage(`Cancelled`);
+            return;
+        }
+        await this.runWhileAwake("archive-restore", () => this.executeVaultRestore(zipFileMap, deletingFiles, prefix));
+    }
+
+    private async planVaultRestore(
+        onlyNew: boolean,
+        deleteMissing: boolean,
+        fileFilter: Record<string, number> | undefined,
+        prefix: string
     ) {
         this.logMessage(`Checking backup information...`);
         const files = await this.loadTOC();
@@ -749,10 +797,20 @@ export default class DiffZipBackupPlugin extends Plugin {
             }
             history.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
             const latest = history[0];
+            const selectedRevisionMissing = latest.missing === true;
             const zipName = latest.zipName;
             const localFileName = this.vaultAccess.normalizePath(`${prefix}${filename}`);
             const localStat = await this.vaultAccess.stat(localFileName);
             if (localStat) {
+                if (selectedRevisionMissing) {
+                    if (!deleteMissing) {
+                        this.logWrite(`${filename}: is marked as missing, but existing in the vault. Skipping...`);
+                    } else {
+                        this.logWrite(`${filename}: is marked as missing. It will be deleted...`);
+                        deletingFiles.push(localFileName);
+                    }
+                    continue;
+                }
                 const content = await this.vaultAccess.readBinary(localFileName);
                 if (!content) {
                     this.logWrite(`${filename}: has been failed to read`);
@@ -763,16 +821,6 @@ export default class DiffZipBackupPlugin extends Plugin {
                     this.logWrite(`${filename}: is as same as the backup. Skipping...`);
                     continue;
                 }
-                if (fileInfo.missing) {
-                    if (!deleteMissing) {
-                        this.logWrite(`${filename}: is marked as missing, but existing in the vault. Skipping...`);
-                        continue;
-                    } else {
-                        // this.logWrite(`${filename}: is marked as missing. Deleting...`);
-                        deletingFiles.push(filename);
-                        //TODO: Delete the file
-                    }
-                }
                 const localMtime = localStat.mtime;
                 const remoteMtime = new Date(latest.modified).getTime();
                 if (onlyNew && localMtime >= remoteMtime) {
@@ -780,7 +828,7 @@ export default class DiffZipBackupPlugin extends Plugin {
                     continue;
                 }
             } else {
-                if (fileInfo.missing) {
+                if (selectedRevisionMissing) {
                     this.logWrite(`${filename}: is missing and not found in the vault. Skipping...`);
                     continue;
                 }
@@ -794,21 +842,24 @@ export default class DiffZipBackupPlugin extends Plugin {
 
             // latestZipMap.set(filename, zipName);
         }
-        if (processFileCount == 0 && deletingFiles.length == 0) {
-            this.logMessage(`Nothing to restore`);
-            return;
-        }
-        if (
-            !(await confirmRestore(this.ui, { processFileCount, filesByZip: zipFileMap, deleteMissing, deletingFiles }))
-        ) {
-            this.logMessage(`Cancelled`);
-            return;
-        }
+        return { deletingFiles, processFileCount, zipFileMap };
+    }
+
+    private async executeVaultRestore(
+        zipFileMap: ReadonlyMap<string, string[]>,
+        deletingFiles: readonly string[],
+        prefix: string
+    ): Promise<void> {
         for (const [zipName, files] of zipFileMap) {
             this.logMessage(`Extracting ${zipName}...`);
-            await this.extract(zipName, files, undefined, prefix);
+            await this.extractWithoutWakeLock(zipName, files, undefined, prefix);
         }
-        // console.dir(zipFileMap);
+        for (const filename of deletingFiles) {
+            this.logWrite(`${filename}: deleting from the vault...`);
+            if (!(await this.vaultAccess.deleteBinary(filename))) {
+                throw new Error(`Failed to delete ${filename} from the vault`);
+            }
+        }
     }
     async onload() {
         this.register(() => {

@@ -46,7 +46,7 @@ async function requestRestore(page: Page, deleteMissing: boolean): Promise<void>
             if (!plugin) throw new Error(`DiffZip is not loaded: ${pluginId}`);
             await plugin.restoreVault(false, shouldDeleteMissing);
         },
-        { pluginId: DIFFZIP_PLUGIN_ID, shouldDeleteMissing: deleteMissing },
+        { pluginId: DIFFZIP_PLUGIN_ID, shouldDeleteMissing: deleteMissing }
     );
 }
 
@@ -122,7 +122,7 @@ async function assertLargeConfirmationLayout(page: Page, modal: Locator): Promis
 
 async function verifyCancellation(
     testSession: DiffZipTestSession,
-    { deleteMissing, dismissWithEscape }: RestoreConfirmationScenario,
+    { deleteMissing, dismissWithEscape }: RestoreConfirmationScenario
 ): Promise<void> {
     await withObsidianPage(testSession.session.remoteDebuggingPort, async (page) => {
         await enterPhoneReview(page);
@@ -131,20 +131,19 @@ async function verifyCancellation(
             const modal = page.locator(".modal-container").filter({ hasText: "Restore Confirmation" }).last();
             await modal.waitFor({ state: "visible", timeout: 10_000 });
             const expectedDetailCount = deleteMissing ? 2 : 1;
-            await modal.locator("details").nth(expectedDetailCount - 1).waitFor({ state: "attached", timeout: 5_000 });
+            await modal
+                .locator("details")
+                .nth(expectedDetailCount - 1)
+                .waitFor({ state: "attached", timeout: 5_000 });
 
             const content = await modal.textContent();
             if (content === null) {
                 throw new Error("Restore summary was not rendered");
             }
             const normalRestoreSummary =
-                `We have ${RESTORE_FIXTURE_PATHS.length} files to restore ` +
-                `on ${RESTORE_FIXTURE_ZIP_COUNT} ZIPs.`;
-            if (!deleteMissing && !content.includes(normalRestoreSummary)) {
-                throw new Error(`Normal restore summary was not rendered: ${content}`);
-            }
-            if (deleteMissing && !content.includes("files to restore on")) {
-                throw new Error(`Mirror restore summary was not rendered: ${content}`);
+                `We have ${RESTORE_FIXTURE_PATHS.length} files to restore ` + `on ${RESTORE_FIXTURE_ZIP_COUNT} ZIPs.`;
+            if (!content.includes(normalRestoreSummary)) {
+                throw new Error(`${deleteMissing ? "Mirror" : "Normal"} restore summary was not rendered: ${content}`);
             }
             for (const path of [RESTORE_FIXTURE_PATHS.at(0), RESTORE_FIXTURE_PATHS.at(-1)]) {
                 if (!path || !content.includes(path)) {
@@ -156,10 +155,7 @@ async function verifyCancellation(
                 if (!content.includes(deletionSummary)) {
                     throw new Error(`Mirror deletion summary was not rendered: ${content}`);
                 }
-                for (const path of [
-                    MIRROR_DELETION_FIXTURE_PATHS.at(0),
-                    MIRROR_DELETION_FIXTURE_PATHS.at(-1),
-                ]) {
+                for (const path of [MIRROR_DELETION_FIXTURE_PATHS.at(0), MIRROR_DELETION_FIXTURE_PATHS.at(-1)]) {
                     if (!path || !content.includes(path)) {
                         throw new Error(`Mirror deletion candidate was not rendered: ${path ?? "<undefined>"}`);
                     }

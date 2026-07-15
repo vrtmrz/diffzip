@@ -33,12 +33,12 @@ export class RestoreDialog extends Modal {
                 onApply: async (
                     selectedRevisions: Record<string, number>,
                     mode: "new" | "all" | "all-delete",
-                    prefix: string,
+                    prefix: string
                 ) => {
                     this.close();
                     const onlyNew = mode === "new";
-                    const skipDeleted = mode !== "all-delete";
-                    await this.plugin.restoreVault(onlyNew, skipDeleted, selectedRevisions, prefix);
+                    const deleteMissing = mode === "all-delete";
+                    await this.plugin.restoreVault(onlyNew, deleteMissing, selectedRevisions, prefix);
                 },
             },
         });

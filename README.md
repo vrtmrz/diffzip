@@ -76,7 +76,8 @@ The restore dialog shows backup history as a searchable file tree.
 - `Restore Mode` controls how existing local files are handled:
   - `Only new`: restore only files that do not exist locally, or files whose backup revision is newer than the local file.
   - `All`: restore selected files even when local files already exist.
-  - `All and delete extra`: restore selected files and include deletion records in the confirmation. Deleting local files from those records is not implemented yet.
+  - `All and delete extra`: restore selected files and remove local files represented by the selected deletion records. The confirmation lists both operations, and deletion starts only after the selected files have been restored successfully.
+    The confirmation reflects the paths and operations planned when it opened. DiffZip does not revalidate deletion candidates that change while the dialogue remains open; cancel and reopen the restore dialogue before proceeding if the Vault may have changed during review.
 - `Additional prefix` restores files under an extra path prefix, such as `restored/`.
   The `Restore folder` setting is used by the legacy restore commands; the current revision selector uses this prefix field instead.
 
@@ -110,7 +111,7 @@ Legacy command meanings:
 | `Legacy: Restore from backups (previous behaviour)` | Use the older prompt-based restore flow instead of the current revision selector. |
 | `Legacy: Restore from backups per folder` | Use the older folder-oriented restore flow. |
 | `Legacy: Fetch all new files from the backups` | Restore files from backup history when the local file is missing or older than the backup revision. Existing local files that are newer or identical are left alone. |
-| `Legacy: ⚠ Restore Vault from backups and delete with deletion` | Restore the vault from backup history and include deletion records in the confirmation. Deleting local files from those records is not implemented yet. |
+| `Legacy: ⚠ Restore Vault from backups and delete with deletion` | Restore the vault from backup history, then remove local files represented by applicable deletion records. The confirmation lists both operations before they begin. |
 | `Legacy: Selective Sync Remote Backup` | Open the older command entry for the current `Sync Remote Backup` workflow. |
 
 ## Settings
