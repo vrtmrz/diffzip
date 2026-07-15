@@ -18,7 +18,7 @@ export interface RestoreConfirmationOptions {
 /** Requests confirmation for a planned restore through the injected UI capability. */
 export async function confirmRestore(
     ui: UiInteractions,
-    { processFileCount, filesByZip, deleteMissing, deletingFiles }: RestoreConfirmationOptions,
+    { processFileCount, filesByZip, deleteMissing, deletingFiles }: RestoreConfirmationOptions
 ): Promise<boolean> {
     const detailFiles = `<details>
 
@@ -34,25 +34,25 @@ ${[...filesByZip.entries()]
 ${deletingFiles.map((file) => `- ${file}`).join("\n")}
 
 </details>`;
-    const deleteMessage =
-        deleteMissing && deletingFiles.length > 0
-            ? `And ${deletingFiles.length} files will be deleted.\n${detailDeletedFiles}\n`
-            : "";
+    const isDestructive = deleteMissing && deletingFiles.length > 0;
+    const deleteMessage = isDestructive
+        ? `And ${deletingFiles.length} files will be deleted.\n${detailDeletedFiles}\n`
+        : "";
     const message = `We have ${processFileCount} files to restore on ${filesByZip.size} ZIPs. \n${detailFiles}\n${deleteMessage}Are you sure to proceed?`;
 
     const action = await ui.confirmAction(
         {
-            title: "Restore Confirmation",
+            title: isDestructive ? "Restore and Delete Confirmation" : "Restore Confirmation",
             message,
             actions: ["restore", "cancel"] as const,
             labels: {
-                restore: "Yes, restore them!",
+                restore: isDestructive ? "Restore and delete" : "Yes, restore them!",
                 cancel: "Cancel",
             },
             defaultAction: "cancel",
             sourcePath: "/",
         },
-        RESTORE_CONFIRMATION_INTERACTION_ID,
+        RESTORE_CONFIRMATION_INTERACTION_ID
     );
     return action === "restore";
 }

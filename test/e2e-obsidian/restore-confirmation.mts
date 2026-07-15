@@ -76,13 +76,16 @@ async function leavePhoneReview(page: Page): Promise<void> {
     await page.setViewportSize({ width: 1280, height: 960 });
 }
 
-async function assertLargeConfirmationLayout(page: Page, modal: Locator): Promise<void> {
+async function assertLargeConfirmationLayout(page: Page, modal: Locator, deleteMissing: boolean): Promise<void> {
     const dialogue = modal.locator(".modal");
     const title = dialogue.locator(".modal-title");
     const closeButton = dialogue.locator(".modal-close-button");
     const content = dialogue.locator(".modal-content");
     const actions = dialogue.locator(".setting-item-control").last();
-    const restoreButton = dialogue.getByRole("button", { name: "Yes, restore them!", exact: true });
+    const restoreButton = dialogue.getByRole("button", {
+        name: deleteMissing ? "Restore and delete" : "Yes, restore them!",
+        exact: true,
+    });
     const cancelButton = dialogue.getByRole("button", { name: "Cancel", exact: true });
 
     await assertLocatorWithinSafeArea(page, title, {
@@ -128,8 +131,10 @@ async function verifyCancellation(
         await enterPhoneReview(page);
         try {
             const restore = requestRestore(page, deleteMissing);
-            const modal = page.locator(".modal-container").filter({ hasText: "Restore Confirmation" }).last();
+            const confirmationTitle = deleteMissing ? "Restore and Delete Confirmation" : "Restore Confirmation";
+            const modal = page.locator(".modal-container").filter({ hasText: confirmationTitle }).last();
             await modal.waitFor({ state: "visible", timeout: 10_000 });
+            await modal.getByText(confirmationTitle, { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
             const expectedDetailCount = deleteMissing ? 2 : 1;
             await modal
                 .locator("details")
@@ -164,7 +169,7 @@ async function verifyCancellation(
                 throw new Error(`Mirror deletion candidates leaked into a normal restore: ${content}`);
             }
 
-            await assertLargeConfirmationLayout(page, modal);
+            await assertLargeConfirmationLayout(page, modal, deleteMissing);
             if (dismissWithEscape) {
                 await page.keyboard.press("Escape");
             } else {
