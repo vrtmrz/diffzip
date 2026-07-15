@@ -46,7 +46,7 @@ const action = await ui.confirmAction(
         labels: { restore: "Restore", cancel: "Cancel" },
         defaultAction: "cancel",
     },
-    "restore-files",
+    "restore-files"
 );
 ```
 
@@ -68,6 +68,10 @@ Real Modal rendering and dismissal use the local-only Obsidian harness documente
 
 ## Screen wake lock
 
-The plug-in owns one lifecycle-aware screen wake-lock manager. Differential backups, archive restore, and the Fetch and Send phases of selective sync use its closure-based runner, so normal completion, cancellation, and errors release their logical lease automatically. Overlapping and nested operations share the platform wake lock. Confirmation dialogues do not acquire a lease; restore protection starts only when archive input and Vault output begin.
+The plug-in owns one lifecycle-aware screen wake-lock manager. Differential backups, archive restore, and the Fetch and Send phases of selective sync use its closure-based runner, so normal completion, cancellation, and errors release their logical lease automatically. Overlapping and nested operations share the platform wake lock. Restore planning and execution use separate leases; confirmation dialogues do not acquire one.
 
 The Screen Wake Lock API is best effort. Consumer workflows must continue when it is unavailable or rejected, and must not rely on it for background execution. Dispose the manager when the plug-in unloads. Keep the manager injectable through the focused helper in `src/wakeLock.ts`; App-free tests use that boundary instead of constructing the Obsidian plug-in.
+
+## Restore confirmation boundary
+
+Restore confirmation deliberately presents the paths and operations planned at a point in time; it is not a transactional lock on the Vault. DiffZip does not revalidate deletion candidates after opening the confirmation dialogue. A caller that permits concurrent Vault changes must cancel the operation and prepare a new restore plan when the reviewed state may no longer be current.

@@ -12,6 +12,8 @@
         "test:ui:watch": "vitest --config vitest.config.ts",
         "check:e2e:obsidian": "tsc -p test/e2e-obsidian/tsconfig.json",
         "test:e2e:obsidian:restore-confirmation": "npm run build && tsx test/e2e-obsidian/restore-confirmation.mts",
+        "test:e2e:obsidian:legacy-folder-restore": "npm run build && tsx test/e2e-obsidian/legacy-folder-restore.mts",
+        "test:e2e:obsidian:mirror-delete-semantics": "npm run build && tsx test/e2e-obsidian/mirror-delete-semantics.mts",
         "test:e2e:obsidian:wake-lock": "npm run build && tsx test/e2e-obsidian/wake-lock.mts",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "pretty": "npm run prettyNoWrite -- --write --log-level error",
