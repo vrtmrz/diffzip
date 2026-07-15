@@ -1,6 +1,6 @@
 {
     "name": "diffzip",
-    "version": "0.1.9",
+    "version": "0.1.10",
     "description": "Differential ZIP Backup",
     "main": "main.js",
     "scripts": {
@@ -10,6 +10,7 @@
         "build:deploy": "npm run build && npm run deploy:test",
         "test:ui": "vitest run --config vitest.config.ts",
         "test:ui:watch": "vitest --config vitest.config.ts",
+        "test:release": "node --test test/release/*.test.mjs",
         "check:e2e:obsidian": "tsc -p test/e2e-obsidian/tsconfig.json",
         "test:e2e:obsidian:restore-confirmation": "npm run build && tsx test/e2e-obsidian/restore-confirmation.mts",
         "test:e2e:obsidian:legacy-folder-restore": "npm run build && tsx test/e2e-obsidian/legacy-folder-restore.mts",
