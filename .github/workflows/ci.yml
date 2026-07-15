@@ -38,5 +38,8 @@ jobs:
       - name: UI tests
         run: npm run test:ui
 
+      - name: Release metadata tests
+        run: npm run test:release
+
       - name: Deno tests
         run: deno task test
