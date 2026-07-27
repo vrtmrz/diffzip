@@ -140,6 +140,9 @@
     gap: 0.5em;
     border-top: 1px solid var(--background-modifier-border);
     padding-top: 0.75em;
+    /* Room for the button focus ring so it stays inside the dialog */
+    padding-right: 3px;
+    padding-bottom: 3px;
 }
 
 .diffzip-restore-controls {
@@ -240,6 +243,9 @@
 .diffzip-sync-progress-buttons {
     display: flex;
     justify-content: flex-end;
+    /* Room for the button focus ring so it stays inside the dialog */
+    padding-right: 3px;
+    padding-bottom: 3px;
 }
 
 /* Generic progress fragment */
