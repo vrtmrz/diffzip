@@ -2,9 +2,11 @@
 
 ## 0.1.11
 
-### Fixed
+### Interface
 
-- Keyboard focus rings on footer action buttons now remain visible within the restore, selective-sync, and backup-progress dialogs.
+#### Fixed
+
+- Footer action buttons now leave enough space for Obsidian's keyboard focus ring, keeping it visible inside restore, selective-sync, and backup-progress dialogs (PR 22). Thank you to @stge4code for the contribution!
 
 ## 0.1.10
 
