@@ -1,5 +1,11 @@
 # Updates
 
+## 0.1.11
+
+### Fixed
+
+- Keyboard focus rings on footer action buttons now remain visible within the restore, selective-sync, and backup-progress dialogs.
+
 ## 0.1.10
 
 ### Fixed
