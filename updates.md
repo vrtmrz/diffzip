@@ -1,5 +1,12 @@
 # Updates
 
+## 0.1.12
+
+### Maintenance
+
+- Updated the source and build tooling to meet the current Obsidian Community Review requirements.
+- This release does not change DiffZip's behaviour.
+
 ## 0.1.11
 
 ### Interface
