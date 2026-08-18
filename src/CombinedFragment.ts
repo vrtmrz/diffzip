@@ -28,7 +28,7 @@ export class CombinedFragment {
      * @returns The combined DocumentFragment.
      */
     buildFragment(fragments: (() => DocumentFragment)[]) {
-        const f = activeDocument.createDocumentFragment();
+        const f = createFragment();
         fragments.forEach(fragment => {
             f.appendChild(fragment());
         });

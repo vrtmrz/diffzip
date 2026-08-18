@@ -72,8 +72,9 @@ export default class DiffZipBackupPlugin extends Plugin {
     }
 
     get sep(): string {
-        //@ts-ignore
-        return (this.isDesktopMode ? this.app.vault.adapter.path.sep : "/") as string;
+        if (!this.isDesktopMode) return "/";
+        const desktopAdapter = this.app.vault.adapter as unknown as { path: { sep: string } };
+        return desktopAdapter.path.sep;
     }
 
     messages = {} as Record<string, NoticeWithTimer>;
@@ -113,9 +114,8 @@ export default class DiffZipBackupPlugin extends Plugin {
             delete this.messages[key];
         }
     }
-    logWrite(message: string, _key?: string) {
-        const dt = new Date().toLocaleString();
-        console.log(`${dt}\t${message}`);
+    logWrite(_message: string, _key?: string): void {
+        // Detailed operational logging is intentionally quiet in production.
     }
 
     async getFiles(path: string, ignoreList: string[], progress: ProgressFragment) {
@@ -158,9 +158,8 @@ export default class DiffZipBackupPlugin extends Plugin {
                 } else {
                     this.logWrite(`Backup information has been loaded`, "proc-index");
                 }
-            } catch (ex) {
+            } catch {
                 this.logMessage(`Something went wrong while parsing Backup information`, "proc-index");
-                console.warn(ex);
                 toc = {};
             }
         } else {
@@ -188,8 +187,8 @@ export default class DiffZipBackupPlugin extends Plugin {
                     }, 1000);
                 },
             });
-            const noticeFragment = activeDocument.createDocumentFragment();
-            const noticeContainer = activeDocument.createElement("div");
+            const noticeFragment = createFragment();
+            const noticeContainer = noticeFragment.createDiv();
             noticeContainer.classList.add("diffzip-progress-notice");
             noticeContainer.appendChild(progress.fragment);
             noticeFragment.appendChild(noticeContainer);

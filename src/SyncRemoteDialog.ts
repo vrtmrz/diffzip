@@ -15,9 +15,6 @@ import { executeFetch, executeSend } from "./SyncEngine.ts";
 
 export type { SyncAction, SyncItem, SyncOperation } from "./SyncPlanner.ts";
 
-declare const __DIFFZIP_DEBUG__: boolean;
-const DEBUG_SYNC_LOG = __DIFFZIP_DEBUG__;
-
 const OP_ORDER: Record<SyncOperation, number> = {
     Conflict: 0,
     Add: 1,
@@ -102,7 +99,6 @@ export class SyncRemoteDialog extends Modal {
                 ignoreHidden: !this.plugin.settings.includeHiddenFolder,
                 ignorePatterns,
                 mtimeToleranceMs: 2000,
-                debugDiffToConsole: DEBUG_SYNC_LOG,
             });
             items.sort((a, b) => {
                 const oDiff = OP_ORDER[a.operation] - OP_ORDER[b.operation];
@@ -234,7 +230,6 @@ export class SyncRemoteDialog extends Modal {
                 progress.note = note;
                 progress.value = ++done;
             },
-            DEBUG_SYNC_LOG,
         );
 
         progressNotice.hide();
@@ -248,7 +243,7 @@ export class SyncRemoteDialog extends Modal {
 
     async applySend(sendItems: SyncItem[]) {
         return await this.plugin.runWhileAwake("selective-sync-send", async () => {
-            const { sentCount } = await executeSend(
+            const { sentCount, oversizedFiles } = await executeSend(
                 sendItems,
                 this.plugin.vaultAccess,
                 this.plugin.backups,
@@ -267,9 +262,11 @@ export class SyncRemoteDialog extends Modal {
                             ? this.plugin.settings.maxSize * 1024 * 1024
                             : 0,
                     serializeYaml: stringifyYaml,
-                    debugExecutionToConsole: DEBUG_SYNC_LOG,
                 },
             );
+            if (oversizedFiles.length > 0) {
+                new Notice(`Oversized files were placed in separate ZIPs: ${oversizedFiles.join(", ")}`);
+            }
             return sentCount;
         });
     }
