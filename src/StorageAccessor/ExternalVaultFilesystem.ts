@@ -1,23 +1,45 @@
 import type { Stat } from "obsidian";
-// eslint-disable-next-line import/no-nodejs-modules -- Electron exposes the Node filesystem API used here.
-import type { promises } from "node:fs";
 import { StorageAccessor } from "./StorageAccessor.ts";
 import { FileType, StorageAccessorTypes } from "./storage-accessor-types.ts";
 import { toArrayBuffer } from "../util.ts";
 
-type FsAPI = Pick<typeof promises, "mkdir" | "writeFile" | "readFile" | "stat" | "rm">;
+type DesktopPathAPI = {
+    sep: string;
+    normalize: (path: string) => string;
+    resolve: (...paths: string[]) => string;
+};
+
+type DesktopFileStat = {
+    isDirectory: () => boolean;
+    isFile: () => boolean;
+};
+
+type FsAPI = {
+    mkdir: (path: string, options: { recursive: true }) => Promise<unknown>;
+    writeFile: (path: string, data: Uint8Array<ArrayBuffer>) => Promise<unknown>;
+    readFile: (path: string) => Promise<Uint8Array<ArrayBufferLike>>;
+    stat: (path: string) => Promise<DesktopFileStat>;
+    rm: (path: string, options: { force: true }) => Promise<unknown>;
+};
+
+type DesktopFileSystemAdapter = {
+    path: DesktopPathAPI;
+    basePath: string;
+    fsPromises: FsAPI;
+};
 
 export class ExternalVaultFilesystem extends StorageAccessor {
     type = StorageAccessorTypes.EXTERNAL;
 
+    private get desktopAdapter(): DesktopFileSystemAdapter {
+        return this.app.vault.adapter as unknown as DesktopFileSystemAdapter;
+    }
+
     get sep(): string {
-        //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- internal API access
-        return this.app.vault.adapter.path.sep as string;
+        return this.desktopAdapter.path.sep;
     }
     get fsPromises(): FsAPI {
-        //@ts-ignore internal API
-        return this.app.vault.adapter.fsPromises as FsAPI;
+        return this.desktopAdapter.fsPromises;
     }
 
     async createFolder(absolutePath: string): Promise<void> {
@@ -34,11 +56,9 @@ export class ExternalVaultFilesystem extends StorageAccessor {
 
     async _writeBinary(fullPath: string, data: ArrayBuffer) {
         try {
-            // eslint-disable-next-line no-undef -- Buffer is global in Node/Electron environment
-            await this.fsPromises.writeFile(fullPath, Buffer.from(data));
+            await this.fsPromises.writeFile(fullPath, new Uint8Array(data));
             return true;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }
@@ -52,8 +72,7 @@ export class ExternalVaultFilesystem extends StorageAccessor {
         try {
             await this.fsPromises.rm(path, { force: true });
             return true;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }
@@ -72,17 +91,9 @@ export class ExternalVaultFilesystem extends StorageAccessor {
     }
 
     normalizePath(path: string): string {
-        //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- internal API access
-        const f = this.app.vault.adapter.path;
-        //@ts-ignore internal API
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- internal API access
-        const basePath = this.app.vault.adapter.basePath;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- internal API access
+        const { path: f, basePath } = this.desktopAdapter;
         const normalizedPath = f.normalize(path);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- internal API access
-        const result = f.resolve(basePath, normalizedPath);
-        return result as string;
+        return f.resolve(basePath, normalizedPath);
     }
 
     async stat(_path: string): Promise<false | Stat> {

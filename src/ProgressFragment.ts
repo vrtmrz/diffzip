@@ -303,24 +303,24 @@ export class ProgressFragment {
      * @returns The constructed DocumentFragment.
      */
     constructFragment() {
-        const f = activeDocument.createDocumentFragment();
-        const d = activeDocument.createElement("div");
+        const f = createFragment();
+        const d = f.createDiv();
         d.classList.add("diffzip-progress-wrap");
-        const titleLine = activeDocument.createElement("div");
+        const titleLine = d.createDiv();
         titleLine.classList.add("diffzip-progress-title-line");
-        const lbl = activeDocument.createElement("label");
+        const lbl = titleLine.createEl("label");
         lbl.classList.add("diffzip-progress-title");
         this._titleEl = lbl;
-        const numeric = activeDocument.createElement("span");
+        const numeric = titleLine.createSpan();
         numeric.classList.add("diffzip-progress-numeric");
         this._numericStatusEl = numeric;
         titleLine.appendChild(lbl);
         titleLine.appendChild(numeric);
         d.appendChild(titleLine);
-        const p = activeDocument.createElement("progress");
+        const p = d.createEl("progress");
         p.classList.add("diffzip-progress-bar");
         this._progressEl = p;
-        this._noteEl = activeDocument.createElement("span");
+        this._noteEl = d.createSpan();
         this._noteEl.classList.add("diffzip-progress-note");
         d.appendChild(p);
         d.appendChild(this._noteEl);

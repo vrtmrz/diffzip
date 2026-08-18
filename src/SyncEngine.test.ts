@@ -364,19 +364,12 @@ Deno.test("executeSend: oversized file is placed in solo ZIP and reported", asyn
     vault.addFile("huge.md", "0123456789", BASE_MTIME + 1000);
     const backup = new MemoryBackup();
 
-    const warn = console.warn;
-    let result!: Awaited<ReturnType<typeof executeSend>>;
-    try {
-        console.warn = () => {};
-        result = await executeSend(
-            [sendItem("small.md"), sendItem("huge.md")], vault, backup,
-            async () => ({}),
-            makeZipName,
-            { ...defaultOptions, maxTotalSizeInZip: 6 },
-        );
-    } finally {
-        console.warn = warn;
-    }
+    const result = await executeSend(
+        [sendItem("small.md"), sendItem("huge.md")], vault, backup,
+        async () => ({}),
+        makeZipName,
+        { ...defaultOptions, maxTotalSizeInZip: 6 },
+    );
 
     assertEquals(result.sentCount, 2, "Both files should be sent");
     assertEquals(result.oversizedFiles, ["huge.md"], "Huge file should be reported as oversized");

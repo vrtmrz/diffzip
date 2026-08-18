@@ -147,7 +147,6 @@ export type BuildSyncItemsOptions = {
     ignoreHidden?: boolean;
     ignorePatterns?: string[];
     mtimeToleranceMs?: number;
-    debugDiffToConsole?: boolean;
 };
 
 export function buildSyncItems(
@@ -161,7 +160,6 @@ export function buildSyncItems(
         ignoreHidden = false,
         ignorePatterns = [],
         mtimeToleranceMs = 0,
-        debugDiffToConsole = false,
     } = options;
 
     const shouldIgnore = (filename: string): boolean => {
@@ -187,16 +185,9 @@ export function buildSyncItems(
         const latest = history[0];
         const isRemoteMissing = fileInfo.missing === true;
         const localInfo = localFileMap.get(filename);
-                const fallbackHistoryDigest = history.find((h) => !!h.digest)?.digest ?? "";
-                const topLevelDigest = fileInfo.digest ?? "";
-                const remoteDigest = latest.digest || fallbackHistoryDigest || topLevelDigest;
-                const remoteDigestSource = latest.digest
-                        ? "latest"
-                        : fallbackHistoryDigest
-                            ? "history-fallback"
-                            : topLevelDigest
-                                ? "toc"
-                                : "missing";
+        const fallbackHistoryDigest = history.find((h) => !!h.digest)?.digest ?? "";
+        const topLevelDigest = fileInfo.digest ?? "";
+        const remoteDigest = latest.digest || fallbackHistoryDigest || topLevelDigest;
 
         let operation: SyncOperation | undefined;
 
@@ -219,34 +210,6 @@ export function buildSyncItems(
             const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
             const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
             items.push({ filename, operation, zipName: latest.zipName, modified: latest.modified, action, allowedActions, defaultAction });
-
-            if (debugDiffToConsole && operation !== "Same") {
-                const remoteMtime = new Date(latest.modified).getTime();
-                const localMtime = localInfo?.mtime ?? null;
-                const mtimeDiff = localMtime == null ? null : remoteMtime - localMtime;
-                console.log("[DiffZip][SyncDiff]", {
-                    filename,
-                    operation,
-                    action,
-                    remote: {
-                        zipName: latest.zipName,
-                        modified: latest.modified,
-                        mtime: remoteMtime,
-                        digest: remoteDigest,
-                        digestSource: remoteDigestSource,
-                        rawLatestDigest: latest.digest,
-                        missing: isRemoteMissing,
-                    },
-                    local: localInfo
-                        ? {
-                              mtime: localInfo.mtime,
-                              digest: localInfo.digest,
-                          }
-                        : null,
-                    mtimeDiff,
-                    mtimeToleranceMs,
-                });
-            }
         }
     }
 
@@ -259,18 +222,6 @@ export function buildSyncItems(
             const defaultAction = getDefaultAction(operation, { destructiveDefaultsEnabled });
             const action = isActionAllowed(operation, defaultAction) ? defaultAction : "None";
             items.push({ filename, operation, zipName: "", modified: "", action, allowedActions, defaultAction });
-
-            if (debugDiffToConsole) {
-                console.log("[DiffZip][SyncDiff]", {
-                    filename,
-                    operation,
-                    action,
-                    remote: null,
-                    local: localFileMap.get(filename) ?? null,
-                    mtimeDiff: null,
-                    mtimeToleranceMs,
-                });
-            }
         }
     }
 

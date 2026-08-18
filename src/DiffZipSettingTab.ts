@@ -1,9 +1,23 @@
-import { PluginSettingTab, type App, Setting, Notice } from "obsidian";
-import { encrypt, decrypt } from "octagonal-wheels/encryption.js";
+import { PluginSettingTab, type App, type ButtonComponent, Setting, Notice } from "obsidian";
 import DiffZipBackupPlugin from "../main.ts";
 import { askSelectString } from "./dialog.ts";
+import { decryptSettingsFromUri, encryptSettingsForUri } from "./legacySettingsCrypto.ts";
 import { S3Bucket } from "./StorageAccessor/S3Bucket.ts";
 import { AutoBackupType, type DiffZipBackupSettings } from "./types.ts";
+
+interface DestructiveButtonCompatibility {
+    setDestructive?: () => void;
+    setWarning: () => void;
+}
+
+function setDestructiveButton(button: ButtonComponent): void {
+    const compatibleButton = button as unknown as DestructiveButtonCompatibility;
+    if (compatibleButton.setDestructive !== undefined) {
+        compatibleButton.setDestructive();
+    } else {
+        compatibleButton.setWarning();
+    }
+}
 
 export class DiffZipSettingTab extends PluginSettingTab {
     plugin: DiffZipBackupPlugin;
@@ -14,6 +28,10 @@ export class DiffZipSettingTab extends PluginSettingTab {
     }
 
     display(): void {
+        this.renderSettings();
+    }
+
+    private renderSettings(): void {
         const { containerEl } = this;
         containerEl.empty();
         new Setting(containerEl).setName("Basic").setHeading();
@@ -94,7 +112,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                         this.plugin.settings.desktopFolderEnabled = value == "desktop";
                         this.plugin.settings.bucketEnabled = value == "s3";
                         await this.plugin.saveSettings();
-                        this.display();
+                        this.renderSettings();
                     })
             );
 
@@ -182,8 +200,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
                             } else {
                                 new Notice("Connection is successful, aut bucket is missing");
                             }
-                        } catch (ex) {
-                            console.dir(ex);
+                        } catch {
                             new Notice("Connection failed");
                         }
                     })
@@ -201,7 +218,6 @@ export class DiffZipSettingTab extends PluginSettingTab {
                         } catch (ex) {
                             const message = ex instanceof Error ? ex.message : String(ex);
                             new Notice(`Bucket creation failed\n-----\n${message ?? "Unknown error"}`);
-                            console.dir(ex);
                         }
                     })
                 );
@@ -302,14 +318,12 @@ export class DiffZipSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName("Reset Backup Information")
             .setDesc("After resetting, backup information will be lost.")
-            .addButton((button) =>
-                button
-                    .setWarning()
-                    .setButtonText("Reset")
-                    .onClick(async () => {
-                        await this.plugin.resetToC();
-                    })
-            );
+            .addButton((button) => {
+                setDestructiveButton(button);
+                button.setButtonText("Reset").onClick(async () => {
+                    await this.plugin.resetToC();
+                });
+            });
         new Setting(containerEl)
             .setName("Encryption")
             .setDesc(
@@ -348,9 +362,7 @@ export class DiffZipSettingTab extends PluginSettingTab {
             .addButton((button) => {
                 button.setButtonText("Copy to Clipboard").onClick(async () => {
                     const setting = JSON.stringify(this.plugin.settings);
-                    // Compatibility with old versions
-                    // eslint-disable-next-line @typescript-eslint/no-deprecated -- encrypt is deprecated but kept for backwards compatibility
-                    const encrypted = await encrypt(setting, passphrase, false);
+                    const encrypted = await encryptSettingsForUri(setting, passphrase);
                     const uri = `obsidian://diffzip/settings?data=${encodeURIComponent(encrypted)}`;
                     await navigator.clipboard.writeText(uri);
                     new Notice("URI has been copied to the clipboard");
@@ -370,14 +382,12 @@ export class DiffZipSettingTab extends PluginSettingTab {
             })
             .addButton((button) => {
                 button.setButtonText("Apply");
-                button.setWarning();
+                setDestructiveButton(button);
                 button.onClick(async () => {
                     const uri = copiedURI;
                     const data = decodeURIComponent(uri.split("?data=")[1]);
                     try {
-                        // Compatibility with old versions
-                        // eslint-disable-next-line @typescript-eslint/no-deprecated -- decrypt is deprecated but kept for backwards compatibility
-                        const decrypted = await decrypt(data, passphrase, false);
+                        const decrypted = await decryptSettingsFromUri(data, passphrase);
                         const settings = JSON.parse(decrypted) as DiffZipBackupSettings;
                         if (
                             (await askSelectString(this.app, "Are you sure to overwrite the settings?", [
@@ -387,13 +397,12 @@ export class DiffZipSettingTab extends PluginSettingTab {
                         ) {
                             Object.assign(this.plugin.settings, settings);
                             await this.plugin.saveSettings();
-                            this.display();
+                            this.renderSettings();
                         } else {
                             new Notice("Cancelled");
                         }
-                    } catch (e) {
+                    } catch {
                         new Notice("Failed to decrypt the settings");
-                        console.warn(e);
                     }
                 });
             });

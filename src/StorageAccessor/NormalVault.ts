@@ -36,8 +36,7 @@ export class NormalVault extends StorageAccessor {
                 await this.app.vault.modifyBinary(af, data);
                 return true;
             }
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
         throw new Error("Folder exists with the same name.");
@@ -57,8 +56,7 @@ export class NormalVault extends StorageAccessor {
                 return true;
             }
             return false;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }

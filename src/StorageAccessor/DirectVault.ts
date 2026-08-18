@@ -28,8 +28,7 @@ export class DirectVault extends StorageAccessor {
         try {
             await this.app.vault.adapter.writeBinary(path, data);
             return true;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }
@@ -44,8 +43,7 @@ export class DirectVault extends StorageAccessor {
             if (!(await this.isFileExists(path))) return true;
             await this.app.vault.adapter.remove(path);
             return true;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }

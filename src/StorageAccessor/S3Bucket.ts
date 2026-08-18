@@ -58,14 +58,8 @@ export class S3Bucket extends StorageAccessor {
                 Key: fullPath,
                 Body: new Uint8Array(data),
             });
-            if (~~((r.$metadata.httpStatusCode ?? 500) / 100) == 2) {
-                return true;
-            } else {
-                console.error(`Failed to write binary to ${fullPath} (response code:${r.$metadata.httpStatusCode}).`);
-            }
-            return false;
-        } catch (e) {
-            console.error(e);
+            return ~~((r.$metadata.httpStatusCode ?? 500) / 100) == 2;
+        } catch {
             return false;
         }
     }
@@ -90,8 +84,7 @@ export class S3Bucket extends StorageAccessor {
                 Key: path,
             });
             return true;
-        } catch (e) {
-            console.error(e);
+        } catch {
             return false;
         }
     }

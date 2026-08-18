@@ -1,19 +1,42 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-deprecated -- This file is based on an external library (remotely-save) and uses legacy/untyped APIs */
-// deno-lint-ignore-file
 // This file is based on a file that was published by the @remotely-save, under the Apache 2 License.
 // I would love to express my deepest gratitude to the original authors for their hard work and dedication. Without their contributions, this project would not have been possible.
 //
 // Original Implementation is here: https://github.com/remotely-save/remotely-save/blob/28b99557a864ef59c19d2ad96101196e401718f0/src/remoteForS3.ts
 
 import { FetchHttpHandler, type FetchHttpHandlerOptions } from "@smithy/fetch-http-handler";
-import { HttpRequest, HttpResponse, type HttpHandlerOptions } from "@smithy/protocol-http";
-//@ts-ignore
-import { requestTimeout } from "@smithy/fetch-http-handler/dist-es/request-timeout";
+import { HttpRequest, HttpResponse } from "@smithy/protocol-http";
 import { buildQueryString } from "@smithy/querystring-builder";
+import type { HttpHandlerOptions } from "@smithy/types";
 import { requestUrl, type RequestUrlParam } from "obsidian";
+
 ////////////////////////////////////////////////////////////////////////////////
 // special handler using Obsidian requestUrl
 ////////////////////////////////////////////////////////////////////////////////
+
+function requestTimeout(timeoutInMs: number = 0): Promise<never> {
+    return new Promise((_, reject) => {
+        if (timeoutInMs) {
+            window.setTimeout(() => {
+                const timeoutError = new Error(`Request did not complete within ${timeoutInMs} ms`);
+                timeoutError.name = "TimeoutError";
+                reject(timeoutError);
+            }, timeoutInMs);
+        }
+    });
+}
+
+function normaliseRequestBody(body: unknown): string | ArrayBuffer | undefined {
+    if (body === undefined) return undefined;
+    if (typeof body === "string" || body instanceof ArrayBuffer) return body;
+    if (ArrayBuffer.isView(body)) {
+        if (body.buffer instanceof ArrayBuffer && body.byteOffset === 0 && body.byteLength === body.buffer.byteLength) {
+            return body.buffer;
+        }
+        return new Uint8Array(body.buffer, body.byteOffset, body.byteLength).slice().buffer;
+    }
+    const bodyType = typeof body === "object" && body !== null ? body.constructor.name : typeof body;
+    throw new TypeError(`Obsidian requestUrl does not support the request body type ${bodyType}`);
+}
 
 /**
  * This is close to origin implementation of FetchHttpHandler
@@ -29,7 +52,10 @@ export class ObsHttpHandler extends FetchHttpHandler {
         this.requestTimeoutInMs = options === undefined ? undefined : options.requestTimeout;
         this.reverseProxyNoSignUrl = reverseProxyNoSignUrl;
     }
-    async handle(request: HttpRequest, { abortSignal }: HttpHandlerOptions = {}): Promise<{ response: HttpResponse }> {
+    override async handle(
+        request: HttpRequest,
+        { abortSignal }: HttpHandlerOptions = {}
+    ): Promise<{ response: HttpResponse }> {
         if (abortSignal?.aborted) {
             const abortError = new Error("Request aborted");
             abortError.name = "AbortError";
@@ -51,7 +77,7 @@ export class ObsHttpHandler extends FetchHttpHandler {
             urlObj.host = this.reverseProxyNoSignUrl;
             url = urlObj.href;
         }
-        const body = method === "GET" || method === "HEAD" ? undefined : request.body;
+        const body: unknown = method === "GET" || method === "HEAD" ? undefined : request.body;
 
         const transformedHeaders: Record<string, string> = {};
         for (const key of Object.keys(request.headers)) {
@@ -67,10 +93,7 @@ export class ObsHttpHandler extends FetchHttpHandler {
             contentType = transformedHeaders["content-type"];
         }
 
-        let transformedBody: any = body;
-        if (ArrayBuffer.isView(body)) {
-            transformedBody = new Uint8Array(body.buffer).buffer;
-        }
+        const transformedBody = normaliseRequestBody(body);
 
         const param: RequestUrlParam = {
             body: transformedBody,
