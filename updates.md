@@ -5,6 +5,7 @@
 ### Maintenance
 
 - Updated the source and build tooling to meet the current Obsidian Community Review requirements.
+- Refreshed transitive development dependencies to use patched releases.
 - This release does not change DiffZip's behaviour.
 
 ## 0.1.11
