@@ -152,9 +152,9 @@ async function observeDeleteExecution(page: Page): Promise<DeleteExecutionEviden
     );
 
     try {
-        const modal = page.locator(".modal-container").filter({ hasText: "Restore Confirmation" }).last();
+        const modal = page.locator(".modal-container").filter({ hasText: "Restore and Delete Confirmation" }).last();
         await modal.waitFor({ state: "visible", timeout: 10_000 });
-        await modal.getByRole("button", { name: "Yes, restore them!", exact: true }).click();
+        await modal.getByRole("button", { name: "Restore and delete", exact: true }).click();
         return await page.evaluate(
             async ({ pluginId, paths }) => {
                 interface RestorePlugin {
@@ -274,7 +274,7 @@ async function observeSelectedRevisionSemantics(testSession: DiffZipTestSession)
         );
 
         try {
-            const modal = page.locator(".modal-container").filter({ hasText: "Restore Confirmation" }).last();
+            const modal = page.locator(".modal-container").filter({ hasText: "Restore and Delete Confirmation" }).last();
             await modal.waitFor({ state: "visible", timeout: 10_000 });
             const activeLeasesAtConfirmation = await page.evaluate((pluginId) => {
                 const root = globalThis as typeof globalThis & {
@@ -288,7 +288,7 @@ async function observeSelectedRevisionSemantics(testSession: DiffZipTestSession)
                 if (!plugin) throw new Error(`DiffZip is not loaded: ${pluginId}`);
                 return plugin.operationWakeLock.activeLeaseCount;
             }, DIFFZIP_PLUGIN_ID);
-            await modal.getByRole("button", { name: "Yes, restore them!", exact: true }).click();
+            await modal.getByRole("button", { name: "Restore and delete", exact: true }).click();
             const evidence = await page.evaluate(async (pluginId) => {
                 const root = globalThis as typeof globalThis & {
                     app?: {
@@ -430,9 +430,9 @@ async function observeFailureSemantics(testSession: DiffZipTestSession): Promise
                 () => true
             );
         }, DIFFZIP_PLUGIN_ID);
-        const modal = page.locator(".modal-container").filter({ hasText: "Restore Confirmation" }).last();
+        const modal = page.locator(".modal-container").filter({ hasText: "Restore and Delete Confirmation" }).last();
         await modal.waitFor({ state: "visible", timeout: 10_000 });
-        await modal.getByRole("button", { name: "Yes, restore them!", exact: true }).click();
+        await modal.getByRole("button", { name: "Restore and delete", exact: true }).click();
         const restoreFailure = await page.evaluate(
             async ({ pluginId, deletionPath }) => {
                 interface RestorePlugin {
