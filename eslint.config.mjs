@@ -4,8 +4,7 @@ import globals from "globals";
 import { defineConfig, globalIgnores } from "eslint/config";
 import * as sveltePlugin from "eslint-plugin-svelte";
 import svelteParser from "svelte-eslint-parser";
-import importAlias from "@dword-design/eslint-plugin-import-alias";
-import { baseRules, ImportAliasRules, obsidianRules } from "./eslint.config.common.mjs";
+import { baseRules, obsidianRules } from "./eslint.config.common.mjs";
 
 export default defineConfig([
     globalIgnores([
@@ -26,7 +25,6 @@ export default defineConfig([
     },
     ...sveltePlugin.configs["flat/base"],
     ...obsidianmd.configs.recommended,
-    importAlias.configs.recommended,
     {
         files: ["**/*.ts"],
         languageOptions: {
@@ -43,8 +41,6 @@ export default defineConfig([
         rules: {
             ...baseRules,
             ...obsidianRules,
-            ...ImportAliasRules("."),
-            "@dword-design/import-alias/prefer-alias": "off", // Diffzip does not use path aliases
             // Custom rules overrides or adjustments for diffzip:
             "obsidianmd/no-plugin-as-component": "off",
             "obsidianmd/rule-custom-message": "off",
@@ -67,8 +63,6 @@ export default defineConfig([
         rules: {
             "no-unused-vars": "off",
             ...obsidianRules,
-            ...ImportAliasRules("."),
-            "@dword-design/import-alias/prefer-alias": "off",
             "obsidianmd/no-plugin-as-component": "off",
             "obsidianmd/no-unsupported-api": "off",
         },

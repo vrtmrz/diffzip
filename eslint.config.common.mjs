@@ -103,21 +103,6 @@ export const obsidianRules = {
     "obsidianmd/no-static-styles-assignment": "off",
 };
 /**
- * @type {(base:string) => import("eslint").Linter.RulesRecord}
- */
-export const ImportAliasRules = (base) => ({
-    "@dword-design/import-alias/prefer-alias": [
-        "error",
-        {
-            aliasForSubpaths: true,
-            alias: {
-                "@": `${base}/src`,
-                "@lib": `${base}/src/lib/src`,
-            },
-        },
-    ],
-});
-/**
  * @type {import("eslint").Linter.RulesRecord}
  */
 export const CommunityReviewRecommendedRules = {
