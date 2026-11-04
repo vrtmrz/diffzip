@@ -13,6 +13,7 @@ export class RestoreDialog extends Modal {
         public plugin: DiffZipBackupPlugin
     ) {
         super(app);
+        this.containerEl.addClass("diffzip-restore-modal-container");
     }
 
     component?: ReturnType<typeof mount>;
@@ -20,9 +21,9 @@ export class RestoreDialog extends Modal {
     async onOpen() {
         const toc = await this.plugin.loadTOC();
 
-        const containerEl = this.modalEl;
+        const containerEl = this.contentEl;
         containerEl.empty();
-        this.titleEl.setText("Restore (Revision Selector)");
+        this.setTitle("Restore (Revision Selector)");
 
         this.component = mount(RestoreRevisionDialogComponent, {
             target: containerEl,

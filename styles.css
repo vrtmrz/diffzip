@@ -145,6 +145,38 @@
     padding-bottom: 3px;
 }
 
+.is-mobile .diffzip-restore-modal-container {
+    box-sizing: border-box;
+    /* The bottom inset can already include the keyboard; reserve their union once. */
+    max-height: calc(
+        100vh - max(var(--keyboard-height, 0px), var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))
+    );
+    padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    padding-bottom: 0;
+    padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+
+.is-mobile .diffzip-restore-modal-container > .modal {
+    max-height: 100%;
+    min-height: 0;
+}
+
+.is-mobile .diffzip-restore-modal-container .diffzip-restore-search {
+    width: 100%;
+    min-width: 0;
+}
+
+.is-mobile .diffzip-restore-modal-container .diffzip-restore-search input {
+    flex: 1;
+    min-width: 0;
+}
+
+.is-mobile .diffzip-restore-modal-container .diffzip-restore-table .col-rev {
+    width: auto;
+    min-width: 0;
+}
+
 .diffzip-restore-controls {
     justify-content: space-between;
     flex-wrap: wrap;

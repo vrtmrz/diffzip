@@ -69,11 +69,164 @@ async function leavePhoneReview(page: Page): Promise<void> {
             "--safe-area-inset-right",
             "--safe-area-inset-bottom",
             "--safe-area-inset-left",
+            "--keyboard-height",
         ]) {
             document.body.style.removeProperty(property);
         }
     });
     await page.setViewportSize({ width: 1280, height: 960 });
+}
+
+async function verifyRevisionSelectorLayout(testSession: DiffZipTestSession): Promise<void> {
+    const scenarios = [
+        {
+            label: "portrait",
+            viewport: { width: 390, height: 844 },
+            safeAreaInsets: PHONE_SAFE_AREA_INSETS,
+            keyboardHeight: 0,
+            closeWithNativeButton: true,
+        },
+        {
+            label: "landscape",
+            viewport: { width: 844, height: 390 },
+            safeAreaInsets: { top: 0, right: 47, bottom: 21, left: 47 },
+            keyboardHeight: 0,
+            closeWithNativeButton: false,
+        },
+        {
+            label: "portrait with keyboard",
+            viewport: { width: 390, height: 844 },
+            safeAreaInsets: PHONE_SAFE_AREA_INSETS,
+            keyboardHeight: 320,
+            closeWithNativeButton: false,
+        },
+    ];
+    await withObsidianPage(testSession.session.remoteDebuggingPort, async (page) => {
+        await enterPhoneReview(page);
+        try {
+            for (const scenario of scenarios) {
+                const safeAreaInsets = {
+                    ...scenario.safeAreaInsets,
+                    bottom: Math.max(scenario.safeAreaInsets.bottom, scenario.keyboardHeight),
+                };
+                await page.setViewportSize(scenario.viewport);
+                await page.evaluate(({ safeAreaInsets, keyboardHeight }) => {
+                    for (const [edge, inset] of Object.entries(safeAreaInsets)) {
+                        document.body.style.setProperty(`--safe-area-inset-${edge}`, `${inset}px`);
+                    }
+                    document.body.style.setProperty("--keyboard-height", `${keyboardHeight}px`);
+                }, scenario);
+                const executed = await page.evaluate(() => {
+                    const app = (
+                        globalThis as typeof globalThis & {
+                            app?: { commands?: { executeCommandById(id: string): boolean } };
+                        }
+                    ).app;
+                    return app?.commands?.executeCommandById("diffzip:a-find-from-backups") ?? false;
+                });
+                if (!executed) throw new Error("Restore from Backup command was unavailable");
+                const modal = page
+                    .locator(".modal-container")
+                    .filter({ has: page.locator(".diffzip-sync-dialog") })
+                    .last();
+                await modal.getByLabel("Restore Mode").waitFor({ state: "visible", timeout: 10_000 });
+                await modal.evaluate((element) =>
+                    Promise.all(
+                        element
+                            .getAnimations({ subtree: true })
+                            .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+                            .map((animation) => animation.finished.catch(() => undefined))
+                    )
+                );
+                await modal.getByRole("button", { name: "Expand All", exact: true }).click();
+                const dialogue = modal.locator(".modal");
+                await dialogue.evaluate((element) => {
+                    element.scrollTop = 0;
+                });
+                await assertLocatorWithinSafeArea(page, dialogue, {
+                    label: `${scenario.label} revision selector`,
+                    safeAreaInsets,
+                });
+                await assertLocatorWithinSafeArea(page, modal.locator(".diffzip-restore-search"), {
+                    label: `${scenario.label} revision search`,
+                    safeAreaInsets,
+                });
+                await assertNativeContentSpacing(dialogue, modal.locator(".diffzip-restore-search"), "top");
+                await assertNoHorizontalOverflow(page, dialogue, { label: `${scenario.label} revision selector` });
+                await assertNoHorizontalOverflow(page, modal.locator(".diffzip-sync-table-wrap"), {
+                    label: `${scenario.label} revision list`,
+                });
+                const actions = modal.locator(".diffzip-sync-footer");
+                await actions.scrollIntoViewIfNeeded();
+                await assertLocatorWithinSafeArea(page, actions, {
+                    label: `${scenario.label} revision actions`,
+                    safeAreaInsets,
+                });
+                await assertNativeContentSpacing(dialogue, actions, "bottom");
+                await modal.getByText("Restore (Revision Selector)", { exact: true }).waitFor({ state: "visible" });
+                for (const selector of [".modal-title", ".modal-close-button"]) {
+                    await assertLocatorWithinSafeArea(page, modal.locator(selector), {
+                        label: `${scenario.label} revision selector ${selector}`,
+                        safeAreaInsets,
+                    });
+                }
+                await assertLocatorHasMinimumTouchTarget(page, modal.locator(".modal-close-button"), {
+                    label: `${scenario.label} revision selector close button`,
+                });
+                for (const name of ["Restore", "Cancel"]) {
+                    await assertLocatorHasMinimumTouchTarget(page, modal.getByRole("button", { name, exact: true }), {
+                        label: `${scenario.label} ${name} button`,
+                    });
+                }
+                if (scenario.closeWithNativeButton) {
+                    await modal.locator(".modal-close-button").click();
+                } else {
+                    await modal.getByRole("button", { name: "Cancel", exact: true }).click();
+                }
+                await modal.waitFor({ state: "detached", timeout: 10_000 });
+            }
+        } finally {
+            await leavePhoneReview(page);
+        }
+    });
+}
+
+async function assertNativeContentSpacing(
+    dialogue: Locator,
+    control: Locator,
+    verticalEdge: "top" | "bottom"
+): Promise<void> {
+    const padding = await dialogue.evaluate((element) => {
+        const reference = document.createElement("div");
+        reference.className = "modal-content";
+        Object.assign(reference.style, { position: "absolute", visibility: "hidden", pointerEvents: "none" });
+        element.appendChild(reference);
+        const style = getComputedStyle(reference);
+        const result = {
+            left: Number.parseFloat(style.paddingLeft),
+            right: Number.parseFloat(style.paddingRight),
+            top: Number.parseFloat(style.paddingTop),
+            bottom: Number.parseFloat(style.paddingBottom),
+        };
+        reference.remove();
+        return result;
+    });
+    const frame = await dialogue.boundingBox();
+    const box = await control.boundingBox();
+    if (!frame || !box) throw new Error("Revision selector spacing could not be measured");
+    const actual = {
+        left: box.x - frame.x,
+        right: frame.x + frame.width - box.x - box.width,
+        top: box.y - frame.y,
+        bottom: frame.y + frame.height - box.y - box.height,
+    };
+    for (const edge of ["left", "right", verticalEdge] as const) {
+        if (actual[edge] + 1 < padding[edge]) {
+            throw new Error(
+                `Revision selector ${edge} spacing is ${actual[edge]}px; native content requires ${padding[edge]}px`
+            );
+        }
+    }
 }
 
 async function assertLargeConfirmationLayout(page: Page, modal: Locator, deleteMissing: boolean): Promise<void> {
@@ -188,6 +341,7 @@ async function main(): Promise<void> {
     let testSession: DiffZipTestSession | undefined;
     try {
         testSession = await startDiffZipTestSession({ restorePlan: "large" });
+        await verifyRevisionSelectorLayout(testSession);
         await verifyCancellation(testSession, { deleteMissing: false, dismissWithEscape: false });
         await verifyCancellation(testSession, { deleteMissing: true, dismissWithEscape: true });
         console.log("DiffZip large restore and mirror confirmations passed in real Obsidian");
