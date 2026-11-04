@@ -70,7 +70,7 @@
         }
     },
     "dependencies": {
-        "@vrtmrz/obsidian-plugin-kit": "0.1.4",
+        "@vrtmrz/obsidian-plugin-kit": "0.1.7",
         "@vrtmrz/ui-interactions": "0.1.2",
         "fflate": "^0.8.3",
         "octagonal-wheels": "0.1.54"
