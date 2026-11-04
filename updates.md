@@ -1,5 +1,11 @@
 # Updates
 
+## Unreleased
+
+### Fixed
+
+- The restore revision selector uses Obsidian's standard content spacing and keeps its search field and action buttons within mobile safe areas when the file list is expanded or the keyboard is shown.
+
 ## 0.1.12
 
 ### Maintenance
