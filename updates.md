@@ -1,10 +1,17 @@
 # Updates
 
-## Unreleased
+## 0.1.15
+
+4th November, 2026
 
 ### Fixed
 
-- The restore revision selector uses Obsidian's standard content spacing and keeps its search field and action buttons within mobile safe areas when the file list is expanded or the keyboard is shown.
+- The restore revision selector now uses Obsidian's standard spacing, title, and Close control, and keeps its search field and action buttons inside mobile safe areas in portrait and landscape, including when the keyboard is shown.
+- Search inputs and revision controls now fit within the available space without horizontal overflow.
+
+### Miscellaneous
+
+- Updated dependencies.
 
 ## 0.1.12
 
